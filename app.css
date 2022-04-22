@@ -1,0 +1,3 @@
+@import "node_modules/xterm/css/xterm.css";
+
+#terminal { margin-top: 1em; }

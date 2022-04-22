@@ -1,7 +1,14 @@
+import { Terminal } from 'xterm';
 export {}
 
 let connectElt = document.getElementById("connect") as HTMLButtonElement;
-let outputElt = document.getElementById("output") as HTMLTextAreaElement;
+let terminalElt = document.getElementById("terminal") as HTMLDivElement;
+
+let terminal = new Terminal({
+  rows: 50,
+  scrollback: 0,
+});
+terminal.open(terminalElt);
 
 var connected = false;
 
@@ -18,24 +25,23 @@ async function connect() {
     await port.open({ baudRate: 9600 });
     connectElt.textContent = "Connected";
 
-    let decoder = new TextDecoderStream();
-    let closed = port.readable.pipeTo(decoder.writable);
-    let reader = decoder.readable.getReader();
+    let reader = port.readable.getReader();
 
-    outputElt.value = "";
+    terminal.clear();
 
-    while (true) {
+    try {
+      while (true) {
         const { value, done } = await reader.read();
         if (done) {
           // Allow the serial port to be closed later.
           reader.releaseLock();
           break;
-        }
-        
-        let end = outputElt.value.length;
-        outputElt.setRangeText(value, end, end);
-        outputElt.scrollTop = outputElt.scrollHeight;
+        }  
+        terminal.write(value);
       }
+    } finally {
+      reader.releaseLock();
+    }
  }
 
 connectElt.addEventListener("click", connect);

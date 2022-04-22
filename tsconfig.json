@@ -1,7 +1,8 @@
 {
     "compilerOptions": {
-        "target": "ES6",
-        "isolatedModules": true
+        "target": "ES2017",
+        "isolatedModules": true,
+        "moduleResolution": "node",
     },
     "files": [
         "./app.ts"
