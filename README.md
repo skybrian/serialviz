@@ -1,2 +1,2 @@
-# usbdash
-Log data from a USB serial device
+# serialviz
+Plots data from a serial device
