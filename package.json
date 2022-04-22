@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "esbuild": "^0.14.38"
+  },
+  "scripts": {
+    "build": "esbuild app.ts --bundle --sourcemap --outfile=site/app.js",
+    "launch": "open -a 'Google Chrome' site/index.html"
+  }
+}
