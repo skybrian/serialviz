@@ -1,5 +1,7 @@
-let connectElt = document.getElementById("connect");
-let outputElt = document.getElementById("output");
+export {}
+
+let connectElt = document.getElementById("connect") as HTMLButtonElement;
+let outputElt = document.getElementById("output") as HTMLTextAreaElement;
 
 var connected = false;
 

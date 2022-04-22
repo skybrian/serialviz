@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+        "target": "ES6",
+        "isolatedModules": true
+    },
+    "files": [
+        "./app.ts"
+    ]
+}
