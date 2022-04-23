@@ -22,19 +22,20 @@ async function connect() {
     let info = port.getInfo();
     console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
 
-    await port.open({ baudRate: 9600 });
+    await port.open({
+      baudRate: 115200,
+      bufferSize: 4096,
+      flowControl: "hardware",
+     });
     connectElt.textContent = "Connected";
-
-    let reader = port.readable.getReader();
 
     terminal.clear();
 
+    let reader = port.readable.getReader();
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          // Allow the serial port to be closed later.
-          reader.releaseLock();
           break;
         }  
         terminal.write(value);
