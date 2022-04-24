@@ -4,8 +4,8 @@ export {}
 var [startElt, connectedElt, terminalElt] =
   ["start", "connected", "terminal"].map((id) => document.getElementById(id)) as HTMLDivElement[];
 
-let [connectElt, pauseElt] =
-  ["connect", "pause"].map((id) => document.getElementById(id)) as HTMLButtonElement[];
+let [connectElt, stopElt] =
+  ["connect", "stop"].map((id) => document.getElementById(id)) as HTMLButtonElement[];
 
 let terminal = new Terminal({
   rows: 50,
@@ -13,7 +13,7 @@ let terminal = new Terminal({
 });
 terminal.open(terminalElt);
 
-async function connect() {
+async function choosePort() {
     connectElt.disabled = true;
 
     let port = await navigator.serial.requestPort();
@@ -21,16 +21,10 @@ async function connect() {
     let info = port.getInfo();
     console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
 
-    await port.open({
-      baudRate: 115200,
-      bufferSize: 40,
-      flowControl: "hardware",
-     });
-
-    onConnected(port);
+    connect(port);
 }
 
-async function onConnected(port: SerialPort) {
+async function connect(port: SerialPort) {
   var paused = false;
 
   var copyDone: Promise<void>;
@@ -41,7 +35,7 @@ async function onConnected(port: SerialPort) {
 
   function fatal(e) {
     writeStatus(e);
-    pauseElt.disabled = true;
+    stopElt.disabled = true;
   }
 
   async function copyToTerminal(): Promise<void> {
@@ -57,29 +51,39 @@ async function onConnected(port: SerialPort) {
     // Give them a chance to pause.
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    let reader = port.readable.getReader();
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        terminal.write(value);
-        if (paused) {
-          writeStatus("Paused");
-          return;
-        } else if (done) {
-          fatal("Done");
-          return;
+      terminal.clear();
+
+      await port.open({
+        baudRate: 115200,
+        bufferSize: 40,
+        flowControl: "hardware",
+      });
+
+      let reader = port.readable.getReader();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          terminal.write(value);
+          if (paused || done) {
+            return;
+          }
         }
+      } finally {
+        reader.releaseLock();
       }
-    } catch(e) {
+
+    } catch (e) {
       fatal(e);
     } finally {
-      reader.releaseLock();
+      await port.close();
+      writeStatus("Closed Port");
     }
   }
 
   function onPause() {
     paused = !paused;
-    pauseElt.textContent = paused ? "Resume" : "Pause";
+    stopElt.textContent = paused ? "Reconnect" : "Pause";
     if (!paused) {
       copyDone.then(() => {
         copyDone = copyToTerminal();
@@ -97,7 +101,7 @@ async function onConnected(port: SerialPort) {
   startElt.style.display = "none";
   connectedElt.style.display = "block";
   copyDone = copyToTerminal();
-  pauseElt.addEventListener("click", onPause);
+  stopElt.addEventListener("click", onPause);
 }
 
-connectElt.addEventListener("click", connect);
+connectElt.addEventListener("click", choosePort);
