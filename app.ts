@@ -30,8 +30,7 @@ async function connect() {
     onConnected(port);
 }
 
-function onConnected(port: SerialPort) {
-
+async function onConnected(port: SerialPort) {
   var paused = false;
 
   var copyDone: Promise<void>;
@@ -46,6 +45,18 @@ function onConnected(port: SerialPort) {
   }
 
   async function copyToTerminal(): Promise<void> {
+    if (paused) {
+      writeStatus("Paused");
+      return;
+    }
+
+    // Tell other windows to pause, so we don't read the port at the same time.
+    // See: https://bugs.chromium.org/p/chromium/issues/detail?id=1319178
+    localStorage.readingSerialPort = Date.now();
+
+    // Give them a chance to pause.
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     let reader = port.readable.getReader();
     try {
       while (true) {
@@ -75,6 +86,13 @@ function onConnected(port: SerialPort) {
       });
     }
   }
+
+  // Automatically pause when another tab opens.
+  window.addEventListener("storage", (e: StorageEvent) => {
+    if (e.key == "readingSerialPort" && !paused) {
+      onPause();
+    }
+  });
 
   startElt.style.display = "none";
   connectedElt.style.display = "block";
