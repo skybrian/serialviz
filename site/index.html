@@ -6,11 +6,16 @@
 <body>
     <h1>Serial Viz</h1>
 
-    <div>
-    <button id="connect">Connect</button>
+    <div id="start">
+        <button id="connect">Connect</button>
     </div>
 
-    <div id="terminal"></div>
+    <div id="connected" style="display: none">
+        <div>
+            <button id="pause">Pause</button>
+        </div>
+        <div id="terminal"></div>
+    </div>
 
     <script src="app.js"></script>
 </body>
