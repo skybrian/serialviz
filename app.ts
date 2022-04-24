@@ -1,13 +1,13 @@
 import { Terminal } from 'xterm';
 export {}
 
-var [startElt, connectedElt, terminalElt] =
+const [startElt, connectedElt, terminalElt] =
   ["start", "connected", "terminal"].map((id) => document.getElementById(id)) as HTMLDivElement[];
 
-let [connectElt, stopElt] =
+const [connectElt, stopElt] =
   ["connect", "stop"].map((id) => document.getElementById(id)) as HTMLButtonElement[];
 
-let terminal = new Terminal({
+const terminal = new Terminal({
   rows: 50,
   scrollback: 0,
 });
@@ -16,18 +16,18 @@ terminal.open(terminalElt);
 async function choosePort() {
     connectElt.disabled = true;
 
-    let port = await navigator.serial.requestPort();
+    const port = await navigator.serial.requestPort();
 
-    let info = port.getInfo();
+    const info = port.getInfo();
     console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
 
     connect(port);
 }
 
 async function connect(port: SerialPort) {
-  var paused = false;
+  let stopped = false;
 
-  var copyDone: Promise<void>;
+  let copyDone: Promise<void>;
 
   function writeStatus(e) {
     terminal.write(`\n*** ${e} ***\r\n\r\n`);
@@ -39,33 +39,42 @@ async function connect(port: SerialPort) {
   }
 
   async function copyToTerminal(): Promise<void> {
-    if (paused) {
-      writeStatus("Paused");
-      return;
+    try {
+      await doCopyToTerminal();
+    } catch (e) {
+      fatal(e);
     }
+  }
 
-    // Tell other windows to pause, so we don't read the port at the same time.
+  async function doCopyToTerminal(): Promise<void> {
+    if (stopped) return;
+
+    // Tell other windows to close the serial port.
+    // This ensures we don't try to read the same serial port at the same time.
     // See: https://bugs.chromium.org/p/chromium/issues/detail?id=1319178
-    localStorage.readingSerialPort = Date.now();
+    localStorage.openingSerialPort = Date.now();
 
     // Give them a chance to pause.
     await new Promise(resolve => setTimeout(resolve, 100));
+    if (stopped) return;
+
+    terminal.clear();
+
+    await port.open({
+      baudRate: 115200,
+      bufferSize: 40,
+      flowControl: "hardware",
+    });
 
     try {
-      terminal.clear();
+      if (stopped) return;
 
-      await port.open({
-        baudRate: 115200,
-        bufferSize: 40,
-        flowControl: "hardware",
-      });
-
-      let reader = port.readable.getReader();
+      const reader = port.readable.getReader();
       try {
         while (true) {
           const { value, done } = await reader.read();
           terminal.write(value);
-          if (paused || done) {
+          if (stopped || done) {
             return;
           }
         }
@@ -73,35 +82,33 @@ async function connect(port: SerialPort) {
         reader.releaseLock();
       }
 
-    } catch (e) {
-      fatal(e);
     } finally {
       await port.close();
       writeStatus("Closed Port");
     }
   }
 
-  function onPause() {
-    paused = !paused;
-    stopElt.textContent = paused ? "Reconnect" : "Pause";
-    if (!paused) {
+  function onStop() {
+    stopped = !stopped;
+    stopElt.textContent = stopped ? "Reconnect" : "Pause";
+    if (!stopped) {
       copyDone.then(() => {
         copyDone = copyToTerminal();
       });
     }
   }
 
-  // Automatically pause when another tab opens.
+  // Automatically close the serial port when another tab opens.
   window.addEventListener("storage", (e: StorageEvent) => {
-    if (e.key == "readingSerialPort" && !paused) {
-      onPause();
+    if (e.key == "openingSerialPort" && !stopped) {
+      onStop();
     }
   });
 
   startElt.style.display = "none";
   connectedElt.style.display = "block";
   copyDone = copyToTerminal();
-  stopElt.addEventListener("click", onPause);
+  stopElt.addEventListener("click", onStop);
 }
 
 connectElt.addEventListener("click", choosePort);
