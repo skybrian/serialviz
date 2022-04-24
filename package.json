@@ -2,7 +2,8 @@
   "scripts": {
     "build": "esbuild app.ts app.css --bundle --sourcemap --outdir=site",
     "check": "tsc --noEmit",
-    "launch": "npm run build && open -a 'Google Chrome' site/index.html"
+    "dev": "npm run build -- --servedir=site",
+    "chrome": "open -a 'Google Chrome' http://127.0.0.1:8000/)"
   },
   "devDependencies": {
     "@types/w3c-web-serial": "^1.0.2",
