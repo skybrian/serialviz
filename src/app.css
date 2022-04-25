@@ -1,0 +1,5 @@
+@import "xterm/css/xterm.css";
+
+#terminal {
+    margin-top: 1ex;
+}
