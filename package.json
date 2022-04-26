@@ -5,9 +5,10 @@
     "dev": "npm run build -- --servedir=site",
     "chrome": "open -a 'Google Chrome' http://127.0.0.1:8000/)",
     "build-for-test": "esbuild src/csv.ts src/csv-test.ts --outdir=test --platform=node --format=cjs",
-    "test": "npm run check && npm run build-for-test && ava test/*-test.js"
+    "test": "npm run check && npm run build-for-test && ava --no-color test/*-test.js"
   },
   "devDependencies": {
+    "@types/node": "^17.0.27",
     "@types/w3c-web-serial": "^1.0.2",
     "ava": "^4.2.0",
     "ava-fast-check": "^5.0.0",
