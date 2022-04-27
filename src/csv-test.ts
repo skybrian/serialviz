@@ -1,5 +1,5 @@
 import { testProp, fc } from 'ava-fast-check';
-import { decodeStream } from './csv';
+import { decodeStream, findLines } from './csv';
 
 import { ReadableStream } from 'node:stream/web';
 import test, { ExecutionContext } from 'ava';
@@ -51,7 +51,7 @@ function chunkStream(b: Uint8Array, sizes: number[]) {
   });
 }
 
-const arbitraryChunks = (input: fc.Arbitrary<Uint8Array>): fc.Arbitrary<[Uint8Array, ReadableStream<Uint8Array>]> =>
+const arbitraryBinaryChunks = (input: fc.Arbitrary<Uint8Array>): fc.Arbitrary<[Uint8Array, ReadableStream<Uint8Array>]> =>
   fc.tuple(input, fc.array(fc.nat()))
     .filter(([b, ns]) => ns.reduce((a, b) => a + b, 0) <= b.length)
     .map(([b, ns]) => [b, chunkStream(b, ns)]);
@@ -80,13 +80,13 @@ testProp('decodeStream should split the original string for valid Unicode',
   }, { numRuns: 1000 });
 
 testProp('decodeStream should emit a replacement character for invalid Unicode',
-  [arbitraryChunks(invalidUtf8Examples)], async (t, [_, chunkStream]) => {
+  [arbitraryBinaryChunks(invalidUtf8Examples)], async (t, [_, chunkStream]) => {
     const actual = await concat(t, decodeStream(chunkStream));
     t.true(actual.includes('�'));
   });
 
 testProp('decodeStream should handle arbitrary binary data',
-  [arbitraryChunks(fc.uint8Array())], async (t, [original, chunkStream]) => {
+  [arbitraryBinaryChunks(fc.uint8Array())], async (t, [original, chunkStream]) => {
     const valid = isUtf8(original);
     const actual = await concat(t, decodeStream(chunkStream));
     if (valid) {
@@ -118,3 +118,35 @@ test('decodeStream iterator should release the lock when throw is called', async
   }
   t.false(stream.locked);
 });
+
+async function* chunkGenerator(input: string, splits: number[]): AsyncIterable<string> {
+  let seen = 0;
+  for (const n of splits) {
+    yield input.slice(seen, seen + n);
+    seen += n;
+  }
+  yield input.slice(seen);
+}
+
+const arbitraryStringChunks = (input: fc.Arbitrary<string>): fc.Arbitrary<[string, AsyncIterable<string>]> =>
+  fc.tuple(input, fc.array(fc.nat()))
+    .filter(([s, ns]) => ns.reduce((a, b) => a + b, 0) <= s.length)
+    .map(([s, ns]) => [s, chunkGenerator(s, ns)]);
+
+const biasedStrings = fc.oneof(
+  fc.stringOf(fc.constantFrom("\r", "\n", "x")),
+  fc.asciiString(),
+  fc.fullUnicodeString()
+);
+
+testProp<[[string, AsyncIterable<string>]]>('findLines should generate complete lines',
+  [arbitraryStringChunks(biasedStrings)], async (t, [original, input]) => {
+    const expected = original.split(/\r?\n/);
+
+    const actual = [];
+    for await (const line of findLines(input)) {
+      actual.push(line);
+    }
+
+    t.deepEqual(actual, expected);
+  }, { numRuns: 10000, verbose: true });

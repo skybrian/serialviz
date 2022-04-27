@@ -1,6 +1,4 @@
-export {  decodeStream }
-
-async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
+export async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
   const reader = input.getReader();
   const decoder = new TextDecoder("utf-8", {fatal: false});
   try {
@@ -17,4 +15,23 @@ async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function* findLines(input: AsyncIterable<string>) : AsyncIterable<string> {
+  let prefix = "";
+  for await (let chunk of input) {
+    if (prefix.endsWith('\r')) {
+      chunk = prefix.slice(-1) + chunk;
+      prefix = prefix.slice(0, -1);
+    }
+    const lines = chunk.split(/\r?\n/);
+    if (lines.length == 1) {
+      prefix += lines[0];
+      continue;
+    }
+    yield prefix + lines[0];
+    yield* lines.slice(1, lines.length-1);
+    prefix = lines[lines.length - 1];
+  }
+  yield prefix;
 }
