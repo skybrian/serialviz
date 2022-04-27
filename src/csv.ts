@@ -7,7 +7,7 @@ async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        const result = decoder.decode(Uint8Array.from([]));
+        const result = decoder.decode(new Uint8Array(0));
         if (result.length > 0) yield result;
         return;
       }
