@@ -1,8 +1,18 @@
-import { testProp, fc } from 'ava-fast-check';
-import { decodeStream, findLines } from './csv';
-
 import { ReadableStream } from 'node:stream/web';
+
 import test, { ExecutionContext } from 'ava';
+import { testProp, fc } from 'ava-fast-check';
+import { csvParseRows, csvFormatRow } from 'd3-dsv';
+
+import { decodeStream, findLines, NO_MATCH, parseRow } from './csv.js';
+
+fc.configureGlobal({numRuns: 1000})
+
+const biasedStrings = fc.oneof(
+  fc.stringOf(fc.constantFrom("\r", "\n", "x", ",")),
+  fc.asciiString(),
+  fc.fullUnicodeString()
+);
 
 function isUtf8(bytes: Uint8Array): boolean {
   try {
@@ -133,13 +143,7 @@ const arbitraryStringChunks = (input: fc.Arbitrary<string>): fc.Arbitrary<[strin
     .filter(([s, ns]) => ns.reduce((a, b) => a + b, 0) <= s.length)
     .map(([s, ns]) => [s, chunkGenerator(s, ns)]);
 
-const biasedStrings = fc.oneof(
-  fc.stringOf(fc.constantFrom("\r", "\n", "x")),
-  fc.asciiString(),
-  fc.fullUnicodeString()
-);
-
-testProp<[[string, AsyncIterable<string>]]>('findLines should generate complete lines',
+testProp('findLines should generate complete lines',
   [arbitraryStringChunks(biasedStrings)], async (t, [original, input]) => {
     const expected = original.split(/\r?\n/);
 
@@ -149,4 +153,40 @@ testProp<[[string, AsyncIterable<string>]]>('findLines should generate complete 
     }
 
     t.deepEqual(actual, expected);
-  }, { numRuns: 10000, verbose: true });
+  });
+
+const arbitraryAsciiRecord = fc.array(fc.string(), { minLength: 2 });
+
+testProp('parseRow should allow fields with printable ascii characters', [arbitraryAsciiRecord], async (t, original) => {
+  const line = csvFormatRow(original);
+  const actual = parseRow(line);
+  t.deepEqual(actual, original);
+});
+
+testProp('parseRow should parse the same way as d3 or refuse', [biasedStrings], (t, input) => {
+  const actual = parseRow(input);
+  if (Array.isArray(actual)) {
+    const expected = csvParseRows(input)[0];
+    t.deepEqual(actual, expected);
+  } else {
+    t.is(actual, NO_MATCH);
+  }
+}, { examples: [["0\n"], [" 0"]]});
+
+testProp('parseRow should parse quoted strings as one-row records', [fc.string()], (t, input) => {
+  const quoted = input.includes('"') ? csvFormatRow([input]) : `"${input}"`;
+  const actual = parseRow(quoted);
+  t.deepEqual(actual, [input]);
+});
+
+const arbitraryDoubles = fc.double().map((n) => n + "");
+
+testProp('parseRow should parse doubles as one-row records', [arbitraryDoubles], (t, input) => {
+  t.deepEqual(parseRow(input), [input]);
+});
+
+const arbitraryNonCSV = fc.string().filter((s) => s.match(/^[^ 0-9,\+\-\."][^,]*$/) != null);
+
+testProp('parseRow should reject non-CSV lines', [arbitraryNonCSV], (t, input) => {
+  t.is(parseRow(input), NO_MATCH);
+});

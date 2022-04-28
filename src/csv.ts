@@ -1,3 +1,5 @@
+import { listenerCount } from "node:process";
+
 export async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
   const reader = input.getReader();
   const decoder = new TextDecoder("utf-8", {fatal: false});
@@ -34,4 +36,83 @@ export async function* findLines(input: AsyncIterable<string>) : AsyncIterable<s
     prefix = lines[lines.length - 1];
   }
   yield prefix;
+}
+
+const NEWLINE = 10;
+const RETURN = 13;
+const COMMA = 44;
+const QUOTE = 34;
+const END = Symbol("END");
+type Token = string | typeof END | typeof NO_MATCH;
+
+export const NO_MATCH = Symbol("NO_MATCH");
+
+/** Given something that looks like a CSV row (without the line ending), returns its fields. */
+export function parseRow(input: string) : string[] | typeof NO_MATCH {
+  if (input.length == 0) return NO_MATCH; // skip blank lines
+  if (!input.startsWith("\"") && !input.includes(",")) {
+    // check for a number
+    if (input.match(/[\r\n]/)) return NO_MATCH; // only handle single-line input
+    if (input.trim().length > 0 && !isNaN(+input)) return [input];
+    return NO_MATCH; // line doesn't look like CSV
+  }
+
+  // if (!input.includes('"')) {
+  //   return input.split(",");
+  // }
+  let seen = 0;
+  let done = false;
+
+  function parseField() : Token {
+    if (done) return END;
+
+    const start = seen;
+
+    // Handle quoted field
+    if (input.charCodeAt(seen) === QUOTE) {
+      while (true) {
+        seen++;
+        if (seen >= input.length) {
+          return NO_MATCH; // unterminated quote
+        }
+        const c = input.charCodeAt(seen);
+        if (c === QUOTE) {
+          seen++;
+          const c = input.charCodeAt(seen);
+          if (seen >= input.length) done = true;
+          else if (c === QUOTE) continue;
+          else if (c != COMMA) {
+            return NO_MATCH; // something after a quoted field other than a comma; disallowed.
+          }
+          seen++;
+          return input.slice(start + 1, seen - 2).replace(/""/g, "\"");
+        } else if (c === NEWLINE || c === RETURN) {
+          return NO_MATCH; // multiline quotes disallowed
+        }
+      }
+    }
+
+    // Handle unquoted field, if any
+    while (true) {
+      if (seen >= input.length) {
+        done = true;
+        return input.slice(start);
+      }
+      const c = input.charCodeAt(seen);
+      seen++;
+      if (c === COMMA) {
+        return input.slice(start, seen-1);
+      } else if (c === QUOTE || c === NEWLINE || c === RETURN) {
+        return NO_MATCH;
+      }
+    }
+  }
+
+  const row = [];
+  while (true) {
+    const t = parseField();
+    if (t == END) return row;
+    else if (t ==NO_MATCH) return NO_MATCH;
+    else row.push(t);
+  }
 }
