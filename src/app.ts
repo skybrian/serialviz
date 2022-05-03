@@ -16,7 +16,13 @@ terminal.open(terminalElt);
 async function choosePort() {
     connectElt.disabled = true;
 
-    const port = await navigator.serial.requestPort();
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+    } catch (e) {
+      connectElt.disabled = false;
+      throw e;
+    }
 
     const info = port.getInfo();
     console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
