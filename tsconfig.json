@@ -3,6 +3,9 @@
         "target": "ES2018",
         "isolatedModules": true,
         "moduleResolution": "node",
+        "jsx": "react",
+        "jsxFactory": "h",
+        "jsxFragmentFactory": "Fragment"
     },
     "include": [
         "src/**/*"
