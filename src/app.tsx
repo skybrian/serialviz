@@ -27,30 +27,28 @@ class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choos
   }
 }
 
+type PortStatus = "connecting" | "reading" | "closing" | "closed" | "portGone";
+
 interface PortState {
-  status: "connecting" | "reading" | "closing" | "done";
+  status: PortStatus;
   chunks: (Uint8Array | string)[];
   chunksRead: number;
 }
 
-class PortView extends Component<{ defaultPort: SerialPort }, PortState> {
-  port = this.props.defaultPort; // ignore any changes
+class App {
 
-  state = { status: "connecting", chunks: [], chunksRead: 0 } as PortState;
-  reader: ReadableStreamDefaultReader<Uint8Array>;
+  port: SerialPort;
+  appElt: Element;
 
-  write(chunk: Uint8Array | string) {
-    this.setState((state) => ({
-      chunks: state.chunks.concat([chunk]),
-      chunksRead: state.chunksRead + 1
-    }));
-  }
+  status = "connecting" as PortStatus;
+  chunks = [] as (Uint8Array | string)[];
+  chunksAdded = 0;
+  reader = null as ReadableStreamDefaultReader<Uint8Array>;
 
-  writeStatus(message: any) {
-    this.write(`\n*** ${message} ***\n`);
-  }
+  constructor(port: SerialPort, appElt: Element) {
+    this.port = port;
+    this.appElt = appElt;
 
-  componentDidMount() {
     // Automatically close the serial port when another tab opens.
     window.addEventListener("storage", (e: StorageEvent) => {
       if (e.key == "openingSerialPort") {
@@ -59,22 +57,40 @@ class PortView extends Component<{ defaultPort: SerialPort }, PortState> {
         }
       }
     });
+    this.renderView();
     this.openPort();
   }
 
-  componentDidUpdate(_: any, prev: PortState) {
-    if (prev.status == "reading" && this.state.status == "closing") {
-      if (this.reader != null) {
-        this.reader.cancel();
-      }
-    }
-    if (prev.status == "done" && this.state.status == "connecting") {
-      this.openPort();
+  renderView() {
+    const state = { status: this.status, chunks: this.chunks, chunksRead: this.chunksAdded };
+    render(<PortView state={state} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
+  }
+
+  renderChunk(chunk: Uint8Array | string) {
+    this.chunks = this.chunks.concat([chunk]);
+    this.chunksAdded += 1;
+    this.renderView();
+  }
+
+  renderMessage(message: string) {
+    this.renderChunk(`\r\n*** ${message} ***\r\n`);
+  }
+
+  renderStatus(status: PortStatus, options = {} as { message: string }) {
+    this.status = status;
+    if (options.message) {
+      this.renderMessage(options.message);
+    } else {
+      this.renderView();
     }
   }
 
+  renderFatal(message: any) {
+    this.renderStatus("portGone", { message: message + "" });
+  }
+
   openPort = async () => {
-    if (this.state.status != "connecting") return;
+    if (this.status != "connecting") return;
     // Tell other windows to close the serial port.
     // This ensures we don't try to read the same serial port at the same time.
     // See: https://bugs.chromium.org/p/chromium/issues/detail?id=1319178
@@ -82,7 +98,7 @@ class PortView extends Component<{ defaultPort: SerialPort }, PortState> {
 
     // Give them a chance to pause.
     await new Promise(resolve => setTimeout(resolve, 100));
-    if (this.state.status != "connecting") return;
+    if (this.status != "connecting") return;
 
     try {
       await this.port.open({
@@ -92,12 +108,12 @@ class PortView extends Component<{ defaultPort: SerialPort }, PortState> {
       });
 
       this.reader = this.port.readable.getReader();
-      this.setState({ status: "reading" });
-      this.copyToTerminal();
+      this.renderStatus("reading");
     } catch (e) {
-      this.writeStatus(e);
-      this.setState({ status: "done" });
+      this.renderFatal(e);
+      return;
     }
+    this.copyToTerminal();
   }
 
   copyToTerminal = async () => {
@@ -107,62 +123,71 @@ class PortView extends Component<{ defaultPort: SerialPort }, PortState> {
         if (done) {
           return;
         }
-        this.write(value);
+        this.renderChunk(value);
       }
     } catch (e) {
-      this.writeStatus(e);
+      this.renderFatal(e);
     } finally {
       this.reader.releaseLock();
       this.reader = null;
       try {
         await this.port.close();
+        if (this.status != "portGone") {
+          this.renderStatus("closed", { message: "Closed" });
+        }
       } catch (e) {
-        this.writeStatus(e);
+        this.renderFatal(e);
       }
-      this.setState({ status: "done" });
     }
   }
 
   stop = () => {
-    if (this.state.status == "reading") {
-      this.setState({ status: "closing" });
+    if (this.status == "reading") {
+      if (this.reader != null) {
+        this.reader.cancel();
+      }
+      this.renderStatus("closing");
     }
   }
 
   restart = () => {
-    if (this.state.status == "done") {
-      this.setState({ status: "connecting", chunks: [], chunksRead: 0 });
+    if (this.status == "closed") {
+      this.chunks = [];
+      this.chunksAdded = 0;
+      this.renderStatus("connecting");
+      this.openPort();
     }
   }
 
   finishedChunks = (done: number) => {
-    const todo = this.state.chunksRead - done;
-    if (this.state.chunks.length > todo) {
-      this.setState((state) => ({ chunks: todo > 0 ? state.chunks.slice(-todo) : [] }));
+    const todo = this.chunksAdded - done;
+    if (todo == this.chunks.length) return; // no change
+    if (todo == 0) {
+      this.chunks = [];
+    } else {
+      this.chunks = this.chunks.slice(-todo);
     }
   }
+}
 
-  render() {
-    const button = () => {
-      switch (this.state.status) {
-        case "connecting":
-          return <button disabled={true}>Stop</button>;
-        case "reading":
-          return <button onClick={this.stop}>Stop</button>;
-        case "closing":
-          return <button disabled={true}>Stop</button>;
-        case "done":
-          return <button onClick={this.restart}>Restart</button>;
-      }
+const PortView = (props: { state: PortState, stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
+
+  const button = () => {
+    switch (props.state.status) {
+      case "reading":
+        return <button onClick={props.stop}>Stop</button>;
+      case "closed":
+        return <button onClick={props.restart}>Restart</button>;
+      default:
+        return <button disabled={true}>Stop</button>;
     }
-
-    return <div>
-      <div>
-        {button()}
-      </div>
-      <TermView chunks={this.state.chunks} chunksRead={this.state.chunksRead} finishedChunks={this.finishedChunks} />
-    </div>;
   }
+  return <div>
+    <div>
+      {button()}
+    </div>
+    <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
+  </div>;
 }
 
 class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: number, finishedChunks: (n: number) => void }, {}> {
@@ -207,10 +232,9 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
   }
 }
 
-const appElt = document.getElementById("app") as HTMLDivElement;
-
-function showLog(port: SerialPort) {
-  render(<PortView defaultPort={port} />, appElt);
+function main() {
+  const appElt = document.getElementById("app") as HTMLDivElement;
+  render(<Start onConnect={(port) => new App(port, appElt)} />, appElt);
 }
 
-render(<Start onConnect={showLog} />, appElt);
+main();
