@@ -1,6 +1,7 @@
 'use strict';
 
-import { h, render, Component, createRef } from 'preact';
+import { h, render, Component, ComponentChildren, toChildArray, createRef } from 'preact';
+import { prependOnceListener } from 'process';
 import { Terminal } from 'xterm';
 
 class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choosing: boolean }> {
@@ -23,7 +24,7 @@ class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choos
   }
 
   render() {
-    return <button id="connect" onClick={this.choosePort} disabled={this.state.choosing}>Connect</button>;
+    return <button id="connect" onClick={this.choosePort} disabled={this.state.choosing} class="pure-button pure-button-primary">Connect</button>;
   }
 }
 
@@ -175,19 +176,52 @@ const PortView = (props: { state: PortState, stop: () => void, restart: () => vo
   const button = () => {
     switch (props.state.status) {
       case "reading":
-        return <button onClick={props.stop}>Stop</button>;
+        return <button onClick={props.stop} class="pure-button pure-button-primary">Stop</button>;
       case "closed":
-        return <button onClick={props.restart}>Restart</button>;
+        return <button onClick={props.restart}  class="pure-button pure-button-primary">Restart</button>;
       default:
-        return <button disabled={true}>Stop</button>;
+        return <button disabled={true} class="pure-button">Stop</button>;
     }
   }
-  return <div>
+  return <div class="port-view">
     <div>
       {button()}
     </div>
-    <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
+    <TabView labels={["Log", "Plot"]}>
+      <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
+      <div>Next tab here</div>
+    </TabView>
   </div>;
+}
+
+interface TabProps {
+  labels: string[];
+  children: ComponentChildren;
+}
+
+class TabView extends Component<TabProps, { selected: number }> {
+  state = {selected: 0}
+
+  tabClicked(choice: number) {
+    this.setState({selected: choice});
+  }
+
+  render(s) {
+    const selected = this.state.selected;
+    const labels = this.props.labels;
+    const children = toChildArray(this.props.children);
+    return <div class="tab-view">
+      <div class="pure-menu pure-menu-horizontal"><ul class="pure-menu-list">
+        {labels.map((label, i) =>
+          <li class='pure-menu-item {i==selected ? "pure-menu-selected" : ""}'>
+            <a href="#" class="pure-menu-link" onClick={() => this.tabClicked(i)}>{label}</a>
+          </li>)}
+      </ul></div>
+      <div>
+        {children.map((child, i) => <div class={i==selected ? "tab-view-selected-child" : "tab-view-unselected-child"}>{child}</div>)}
+      </div>
+    </div>
+  }
 }
 
 class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: number, finishedChunks: (n: number) => void }, {}> {

@@ -1,4 +1,21 @@
 @import "xterm/css/xterm.css";
+@import "purecss";
+
+body {
+    margin: 1em;
+}
+
+.tab-view {
+    margin-top: 1em;
+}
+
+.tab-view-selected-child {
+    margin-top: 1em;
+}
+
+.tab-view-unselected-child {
+    display: none;
+}
 
 #terminal {
     margin-top: 1ex;
