@@ -1,8 +1,8 @@
 'use strict';
 
 import { h, render, Component, ComponentChildren, toChildArray, createRef } from 'preact';
-import { prependOnceListener } from 'process';
 import { Terminal } from 'xterm';
+import { decodeStream, findLines, Row, parseRow } from './csv';
 
 class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choosing: boolean }> {
   state = { choosing: false }
@@ -36,6 +36,8 @@ interface PortState {
   chunksRead: number;
 }
 
+const lineBufferSize = 40;
+
 class App {
 
   port: SerialPort;
@@ -44,7 +46,11 @@ class App {
   status = "connecting" as PortStatus;
   chunks = [] as (Uint8Array | string)[];
   chunksAdded = 0;
-  reader = null as ReadableStreamDefaultReader<Uint8Array>;
+  chunkReader = null as ReadableStreamDefaultReader<Uint8Array>;
+
+  rows = [] as Row[];
+  rowsAdded = 0;
+  rowReader = null as ReadableStreamDefaultReader<Uint8Array>;
 
   constructor(port: SerialPort, appElt: Element) {
     this.port = port;
@@ -53,8 +59,8 @@ class App {
     // Automatically close the serial port when another tab opens.
     window.addEventListener("storage", (e: StorageEvent) => {
       if (e.key == "openingSerialPort") {
-        if (this.reader != null) {
-          this.reader.cancel();
+        if (this.chunkReader != null) {
+          this.chunkReader.cancel();
         }
       }
     });
@@ -64,7 +70,11 @@ class App {
 
   renderView() {
     const state = { status: this.status, chunks: this.chunks, chunksRead: this.chunksAdded };
-    render(<PortView state={state} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
+    const linesToTrim = this.rows.length - lineBufferSize;
+    if (linesToTrim > 0) {
+      this.rows = this.rows.slice(linesToTrim);
+    }
+    render(<PortView state={state} lines={this.rows} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
   }
 
   renderChunk(chunk: Uint8Array | string) {
@@ -108,19 +118,23 @@ class App {
         flowControl: "hardware",
       });
 
-      this.reader = this.port.readable.getReader();
+      const [chunkStream, lineStream] = this.port.readable.tee();
+      this.chunkReader = chunkStream.getReader();
+      this.rowReader = lineStream.getReader();
+
       this.renderStatus("reading");
     } catch (e) {
       this.renderFatal(e);
       return;
     }
     this.copyToTerminal();
+    this.parseLines();
   }
 
   copyToTerminal = async () => {
     try {
       while (true) {
-        const { value, done } = await this.reader.read();
+        const { value, done } = await this.chunkReader.read();
         if (done) {
           return;
         }
@@ -129,25 +143,58 @@ class App {
     } catch (e) {
       this.renderFatal(e);
     } finally {
-      this.reader.releaseLock();
-      this.reader = null;
-      try {
-        await this.port.close();
-        if (this.status != "portGone") {
-          this.renderStatus("closed", { message: "Closed" });
+      this.chunkReader.releaseLock();
+      this.chunkReader = null;
+      this.closePort();
+    }
+  }
+
+  parseLines = async () => {
+    try {
+      for await (let line of findLines(decodeStream(this.rowReader))) {
+        const row = parseRow(this.rowsAdded, line);
+        if (row) {
+          this.rows.push(row);
         }
+        this.rowsAdded++;
+      }
+    } finally {
+      this.rowReader.releaseLock();
+      this.rowReader = null;
+    }
+  }
+
+  async closePort() {
+    const tasks = [] as Promise<any>[];
+    if (this.rowReader != null) {
+      tasks.push(this.rowReader.cancel());
+      this.rowReader = null;
+    }
+    if (this.chunkReader != null) {
+      tasks.push(this.chunkReader.cancel());
+      this.chunkReader = null;
+    }
+    for (let task of tasks) {
+      try {
+        await task;
       } catch (e) {
         this.renderFatal(e);
       }
+    }
+    try {
+      await this.port.close();
+      if (this.status != "portGone") {
+        this.renderStatus("closed", { message: "Closed" });
+      }
+    } catch (e) {
+      this.renderFatal(e);
     }
   }
 
   stop = () => {
     if (this.status == "reading") {
-      if (this.reader != null) {
-        this.reader.cancel();
-      }
       this.renderStatus("closing");
+      this.closePort();
     }
   }
 
@@ -155,6 +202,8 @@ class App {
     if (this.status == "closed") {
       this.chunks = [];
       this.chunksAdded = 0;
+      this.rows = [];
+      this.rowsAdded = 0;
       this.renderStatus("connecting");
       this.openPort();
     }
@@ -171,14 +220,14 @@ class App {
   }
 }
 
-const PortView = (props: { state: PortState, stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
+const PortView = (props: { state: PortState, lines: Row[], stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
 
   const button = () => {
     switch (props.state.status) {
       case "reading":
         return <button onClick={props.stop} class="pure-button pure-button-primary">Stop</button>;
       case "closed":
-        return <button onClick={props.restart}  class="pure-button pure-button-primary">Restart</button>;
+        return <button onClick={props.restart} class="pure-button pure-button-primary">Restart</button>;
       default:
         return <button disabled={true} class="pure-button">Stop</button>;
     }
@@ -187,9 +236,9 @@ const PortView = (props: { state: PortState, stop: () => void, restart: () => vo
     <div>
       {button()}
     </div>
-    <TabView labels={["Log", "Plot"]}>
+    <TabView labels={["Log", "Table"]}>
       <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
-      <div>Next tab here</div>
+      <TableView rows={props.lines} />
     </TabView>
   </div>;
 }
@@ -200,13 +249,13 @@ interface TabProps {
 }
 
 class TabView extends Component<TabProps, { selected: number }> {
-  state = {selected: 0}
+  state = { selected: 0 }
 
   tabClicked(choice: number) {
-    this.setState({selected: choice});
+    this.setState({ selected: choice });
   }
 
-  render(s) {
+  render() {
     const selected = this.state.selected;
     const labels = this.props.labels;
     const children = toChildArray(this.props.children);
@@ -218,7 +267,7 @@ class TabView extends Component<TabProps, { selected: number }> {
           </li>)}
       </ul></div>
       <div>
-        {children.map((child, i) => <div class={i==selected ? "tab-view-selected-child" : "tab-view-unselected-child"}>{child}</div>)}
+        {children.map((child, i) => <div class={i == selected ? "tab-view-selected-child" : "tab-view-unselected-child"}>{child}</div>)}
       </div>
     </div>
   }
@@ -264,6 +313,18 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
   render() {
     return <div id="terminal" ref={this.terminalElt}></div>
   }
+}
+
+function TableView(props: { rows: Row[] }) {
+  return <table>
+    {props.rows.map((row) => <RowView {...row} />)}
+  </table>
+}
+
+function RowView(props: Row) {
+  return <tr>
+    {props.fields.map((val) => <td>{val}</td>)}
+  </tr>
 }
 
 function main() {

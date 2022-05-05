@@ -4,9 +4,9 @@ import test, { ExecutionContext } from 'ava';
 import { testProp, fc } from 'ava-fast-check';
 import { csvParseRows, csvFormatRow } from 'd3-dsv';
 
-import { decodeStream, findLines, NO_MATCH, parseRow } from './csv.js';
+import { decodeStream, findLines, parseRow } from './csv.js';
 
-fc.configureGlobal({numRuns: 1000})
+fc.configureGlobal({ numRuns: 1000 })
 
 const biasedStrings = fc.oneof(
   fc.stringOf(fc.constantFrom("\r", "\n", "x", ",")),
@@ -44,7 +44,7 @@ function chunkStream(b: Uint8Array, sizes: number[]) {
   let sent = 0;
   let i = 0;
   let done = false;
-  return new ReadableStream({
+  return new ReadableStream<Uint8Array>({
     pull: (controller) => {
       if (done) {
         throw "pull called when done";
@@ -85,20 +85,20 @@ async function concat(t: ExecutionContext, input: AsyncIterable<string>): Promis
 
 testProp('decodeStream should split the original string for valid Unicode',
   [arbitraryUtf8Chunks(fc.fullUnicodeString())], async (t, [expected, chunkStream]) => {
-    const actual = await concat(t, decodeStream(chunkStream));
+    const actual = await concat(t, decodeStream(chunkStream.getReader()));
     t.is(actual, expected);
   }, { numRuns: 1000 });
 
 testProp('decodeStream should emit a replacement character for invalid Unicode',
   [arbitraryBinaryChunks(invalidUtf8Examples)], async (t, [_, chunkStream]) => {
-    const actual = await concat(t, decodeStream(chunkStream));
+    const actual = await concat(t, decodeStream(chunkStream.getReader()));
     t.true(actual.includes('�'));
   });
 
 testProp('decodeStream should handle arbitrary binary data',
   [arbitraryBinaryChunks(fc.uint8Array())], async (t, [original, chunkStream]) => {
     const valid = isUtf8(original);
-    const actual = await concat(t, decodeStream(chunkStream));
+    const actual = await concat(t, decodeStream(chunkStream.getReader()));
     if (valid) {
       t.is(new TextDecoder().decode(original), actual);
     } else {
@@ -108,7 +108,7 @@ testProp('decodeStream should handle arbitrary binary data',
 
 test('decodeStream iterator should release the lock when return is called', async (t) => {
   const stream = chunkStream(Uint8Array.of(0), []);
-  const iter: AsyncIterator<string> = decodeStream(stream)[Symbol.asyncIterator]();
+  const iter: AsyncIterator<string> = decodeStream(stream.getReader())[Symbol.asyncIterator]();
   await iter.next();
   t.true(stream.locked);
   await iter.return();
@@ -118,7 +118,7 @@ test('decodeStream iterator should release the lock when return is called', asyn
 test('decodeStream iterator should release the lock when throw is called', async (t) => {
   t.plan(3);
   const stream = chunkStream(Uint8Array.of(0), []);
-  const iter: AsyncIterator<string> = decodeStream(stream)[Symbol.asyncIterator]();
+  const iter: AsyncIterator<string> = decodeStream(stream.getReader())[Symbol.asyncIterator]();
   await iter.next();
   t.true(stream.locked);
   try {
@@ -159,34 +159,34 @@ const arbitraryAsciiRecord = fc.array(fc.string(), { minLength: 2 });
 
 testProp('parseRow should allow fields with printable ascii characters', [arbitraryAsciiRecord], async (t, original) => {
   const line = csvFormatRow(original);
-  const actual = parseRow(line);
-  t.deepEqual(actual, original);
+  const actual = parseRow(1, line);
+  t.deepEqual(actual.fields, original);
 });
 
 testProp('parseRow should parse the same way as d3 or refuse', [biasedStrings], (t, input) => {
-  const actual = parseRow(input);
-  if (Array.isArray(actual)) {
+  const actual = parseRow(1, input);
+  if (actual) {
     const expected = csvParseRows(input)[0];
-    t.deepEqual(actual, expected);
+    t.deepEqual(actual.fields, expected);
   } else {
-    t.is(actual, NO_MATCH);
+    t.is(actual, null);
   }
-}, { examples: [["0\n"], [" 0"]]});
+}, { examples: [["0\n"], [" 0"]] });
 
 testProp('parseRow should parse quoted strings as one-row records', [fc.string()], (t, input) => {
   const quoted = input.includes('"') ? csvFormatRow([input]) : `"${input}"`;
-  const actual = parseRow(quoted);
-  t.deepEqual(actual, [input]);
+  const actual = parseRow(1, quoted);
+  t.deepEqual(actual.fields, [input]);
 });
 
 const arbitraryDoubles = fc.double().map((n) => n + "");
 
 testProp('parseRow should parse doubles as one-row records', [arbitraryDoubles], (t, input) => {
-  t.deepEqual(parseRow(input), [input]);
+  t.deepEqual(parseRow(1, input).fields, [input]);
 });
 
 const arbitraryNonCSV = fc.string().filter((s) => s.match(/^[^ 0-9,\+\-\."][^,]*$/) != null);
 
 testProp('parseRow should reject non-CSV lines', [arbitraryNonCSV], (t, input) => {
-  t.is(parseRow(input), NO_MATCH);
+  t.is(parseRow(1, input), null);
 });

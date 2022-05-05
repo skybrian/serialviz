@@ -1,8 +1,5 @@
-import { listenerCount } from "node:process";
-
-export async function* decodeStream(input: ReadableStream) : AsyncIterable<string> {
-  const reader = input.getReader();
-  const decoder = new TextDecoder("utf-8", {fatal: false});
+export async function* decodeStream(reader: ReadableStreamDefaultReader<Uint8Array>): AsyncIterable<string> {
+  const decoder = new TextDecoder("utf-8", { fatal: false });
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -11,7 +8,7 @@ export async function* decodeStream(input: ReadableStream) : AsyncIterable<strin
         if (result.length > 0) yield result;
         return;
       }
-      const result = decoder.decode(value, {stream: true})
+      const result = decoder.decode(value, { stream: true })
       if (result.length > 0) yield result;
     }
   } finally {
@@ -19,7 +16,7 @@ export async function* decodeStream(input: ReadableStream) : AsyncIterable<strin
   }
 }
 
-export async function* findLines(input: AsyncIterable<string>) : AsyncIterable<string> {
+export async function* findLines(input: AsyncIterable<string>): AsyncIterable<string> {
   let prefix = "";
   for await (let chunk of input) {
     if (prefix.endsWith('\r')) {
@@ -32,7 +29,7 @@ export async function* findLines(input: AsyncIterable<string>) : AsyncIterable<s
       continue;
     }
     yield prefix + lines[0];
-    yield* lines.slice(1, lines.length-1);
+    yield* lines.slice(1, lines.length - 1);
     prefix = lines[lines.length - 1];
   }
   yield prefix;
@@ -45,16 +42,22 @@ const QUOTE = 34;
 const END = Symbol("END");
 type Token = string | typeof END | typeof NO_MATCH;
 
-export const NO_MATCH = Symbol("NO_MATCH");
+const NO_MATCH = Symbol("NO_MATCH");
+
+export interface Row {
+  key: number;
+  line: string;
+  fields: string[];
+}
 
 /** Given something that looks like a CSV row (without the line ending), returns its fields. */
-export function parseRow(input: string) : string[] | typeof NO_MATCH {
-  if (input.length == 0) return NO_MATCH; // skip blank lines
+export function parseRow(key: number, input: string): Row | null {
+  if (input.length == 0) return null; // skip blank lines
   if (!input.startsWith("\"") && !input.includes(",")) {
     // check for a number
-    if (input.match(/[\r\n]/)) return NO_MATCH; // only handle single-line input
-    if (input.trim().length > 0 && !isNaN(+input)) return [input];
-    return NO_MATCH; // line doesn't look like CSV
+    if (input.match(/[\r\n]/)) return null; // only handle single-line input
+    if (input.trim().length > 0 && !isNaN(+input)) return { key: key, line: input, fields: [input] };
+    return null; // line doesn't look like CSV
   }
 
   // if (!input.includes('"')) {
@@ -63,7 +66,7 @@ export function parseRow(input: string) : string[] | typeof NO_MATCH {
   let seen = 0;
   let done = false;
 
-  function parseField() : Token {
+  function parseField(): Token {
     if (done) return END;
 
     const start = seen;
@@ -101,18 +104,18 @@ export function parseRow(input: string) : string[] | typeof NO_MATCH {
       const c = input.charCodeAt(seen);
       seen++;
       if (c === COMMA) {
-        return input.slice(start, seen-1);
+        return input.slice(start, seen - 1);
       } else if (c === QUOTE || c === NEWLINE || c === RETURN) {
         return NO_MATCH;
       }
     }
   }
 
-  const row = [];
+  const fields = [];
   while (true) {
     const t = parseField();
-    if (t == END) return row;
-    else if (t ==NO_MATCH) return NO_MATCH;
-    else row.push(t);
+    if (t == END) return { key: key, line: input, fields: fields };
+    else if (t == NO_MATCH) return null;
+    else fields.push(t);
   }
 }
