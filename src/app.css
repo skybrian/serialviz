@@ -9,12 +9,8 @@ body {
     margin-top: 1em;
 }
 
-.tab-view-selected-child {
+.tab-view-selected {
     margin-top: 1em;
-}
-
-.tab-view-unselected-child {
-    display: none;
 }
 
 #terminal {

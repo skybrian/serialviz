@@ -2,7 +2,7 @@
 
 import { h, render, Component, ComponentChildren, toChildArray, createRef } from 'preact';
 import { Terminal } from 'xterm';
-import { decodeStream, findLines, Row, parseRow } from './csv';
+import { decodeStream, findLines, Row, parseRow, TableBuffer, Table } from './csv';
 
 class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choosing: boolean }> {
   state = { choosing: false }
@@ -46,11 +46,12 @@ class App {
   status = "connecting" as PortStatus;
   chunks = [] as (Uint8Array | string)[];
   chunksAdded = 0;
-  chunkReader = null as ReadableStreamDefaultReader<Uint8Array>;
 
-  rows = [] as Row[];
-  rowsAdded = 0;
-  rowReader = null as ReadableStreamDefaultReader<Uint8Array>;
+  linesSeen = 0;
+  rows = new TableBuffer(lineBufferSize);
+
+  readers = [] as ReadableStreamGenericReader[];
+  tasks = [] as Promise<any>[];
 
   constructor(port: SerialPort, appElt: Element) {
     this.port = port;
@@ -59,9 +60,7 @@ class App {
     // Automatically close the serial port when another tab opens.
     window.addEventListener("storage", (e: StorageEvent) => {
       if (e.key == "openingSerialPort") {
-        if (this.chunkReader != null) {
-          this.chunkReader.cancel();
-        }
+        this.requestClose();
       }
     });
     this.renderView();
@@ -70,11 +69,7 @@ class App {
 
   renderView() {
     const state = { status: this.status, chunks: this.chunks, chunksRead: this.chunksAdded };
-    const linesToTrim = this.rows.length - lineBufferSize;
-    if (linesToTrim > 0) {
-      this.rows = this.rows.slice(linesToTrim);
-    }
-    render(<PortView state={state} lines={this.rows} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
+    render(<PortView state={state} tables={this.rows.tables} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
   }
 
   renderChunk(chunk: Uint8Array | string) {
@@ -119,68 +114,59 @@ class App {
       });
 
       const [chunkStream, lineStream] = this.port.readable.tee();
-      this.chunkReader = chunkStream.getReader();
-      this.rowReader = lineStream.getReader();
-
+      this.tasks.push(this.copyToTerminal(chunkStream));
+      this.tasks.push(this.parseLines(lineStream));
+      this.closePortWhenDone();
       this.renderStatus("reading");
     } catch (e) {
       this.renderFatal(e);
       return;
     }
-    this.copyToTerminal();
-    this.parseLines();
   }
 
-  copyToTerminal = async () => {
+  copyToTerminal = async (stream: ReadableStream) => {
+    const reader = stream.getReader();
+    this.readers.push(reader);
     try {
       while (true) {
-        const { value, done } = await this.chunkReader.read();
+        const { value, done } = await reader.read();
         if (done) {
           return;
         }
         this.renderChunk(value);
       }
-    } catch (e) {
-      this.renderFatal(e);
     } finally {
-      this.chunkReader.releaseLock();
-      this.chunkReader = null;
-      this.closePort();
+      reader.releaseLock();
+      await stream.cancel();
     }
   }
 
-  parseLines = async () => {
+  parseLines = async (stream: ReadableStream) => {
     try {
-      for await (let line of findLines(decodeStream(this.rowReader))) {
-        const row = parseRow(this.rowsAdded, line);
+      const reader = stream.getReader();
+      this.readers.push(reader);
+
+      for await (let line of findLines(decodeStream(reader))) {
+        const row = parseRow(this.linesSeen, line);
         if (row) {
           this.rows.push(row);
         }
-        this.rowsAdded++;
+        this.linesSeen++;
       }
     } finally {
-      this.rowReader.releaseLock();
-      this.rowReader = null;
+      await stream.cancel();
     }
   }
 
-  async closePort() {
-    const tasks = [] as Promise<any>[];
-    if (this.rowReader != null) {
-      tasks.push(this.rowReader.cancel());
-      this.rowReader = null;
-    }
-    if (this.chunkReader != null) {
-      tasks.push(this.chunkReader.cancel());
-      this.chunkReader = null;
-    }
-    for (let task of tasks) {
+  async closePortWhenDone() {
+    for (let task = this.tasks.shift(); task; task = this.tasks.shift()) {
       try {
         await task;
       } catch (e) {
         this.renderFatal(e);
       }
     }
+
     try {
       await this.port.close();
       if (this.status != "portGone") {
@@ -191,10 +177,17 @@ class App {
     }
   }
 
+  requestClose() {
+    for (let reader of this.readers) {
+      this.tasks.push(reader.cancel());
+    }
+    this.readers = [];
+  }
+
   stop = () => {
     if (this.status == "reading") {
       this.renderStatus("closing");
-      this.closePort();
+      this.requestClose();
     }
   }
 
@@ -202,8 +195,8 @@ class App {
     if (this.status == "closed") {
       this.chunks = [];
       this.chunksAdded = 0;
-      this.rows = [];
-      this.rowsAdded = 0;
+      this.linesSeen = 0;
+      this.rows.clear();
       this.renderStatus("connecting");
       this.openPort();
     }
@@ -220,7 +213,7 @@ class App {
   }
 }
 
-const PortView = (props: { state: PortState, lines: Row[], stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
+const PortView = (props: { state: PortState, tables: Table[], stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -238,7 +231,7 @@ const PortView = (props: { state: PortState, lines: Row[], stop: () => void, res
     </div>
     <TabView labels={["Log", "Table"]}>
       <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
-      <TableView rows={props.lines} />
+      {props.tables.map((table) => <TableView {...table} />)}
     </TabView>
   </div>;
 }
@@ -262,12 +255,16 @@ class TabView extends Component<TabProps, { selected: number }> {
     return <div class="tab-view">
       <div class="pure-menu pure-menu-horizontal"><ul class="pure-menu-list">
         {labels.map((label, i) =>
-          <li class='pure-menu-item {i==selected ? "pure-menu-selected" : ""}'>
+          <li class={i == selected ? "pure-menu-item pure-menu-selected" : "pure-menu-item"}>
             <a href="#" class="pure-menu-link" onClick={() => this.tabClicked(i)}>{label}</a>
           </li>)}
       </ul></div>
       <div>
-        {children.map((child, i) => <div class={i == selected ? "tab-view-selected-child" : "tab-view-unselected-child"}>{child}</div>)}
+        {children.map((child, i) => {
+          if (i == selected) {
+            return <div class="tab-view-selected">{child}</div>
+          }
+        })}
       </div>
     </div>
   }
@@ -300,12 +297,14 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
     }
 
     const chunks = this.props.chunks;
-    const start = this.chunksWritten;
-    for (let todo = sent - this.chunksWritten; todo > 0; todo--) {
-      this.terminal.write(chunks[chunks.length - todo]);
-      this.chunksWritten++;
+    let start = chunks.length - (sent - this.chunksWritten);
+    if (start < 0) start = 0;
+    let todo = chunks.slice(start);
+    for (let chunk of todo) {
+      this.terminal.write(chunk);
     }
-    if (this.chunksWritten - start > 0) {
+    this.chunksWritten += todo.length;
+    if (todo.length > 0) {
       this.props.finishedChunks(this.chunksWritten);
     }
   }
@@ -315,16 +314,23 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
   }
 }
 
-function TableView(props: { rows: Row[] }) {
+function TableView(props: Table) {
   return <table>
     {props.rows.map((row) => <RowView {...row} />)}
   </table>
 }
 
 function RowView(props: Row) {
-  return <tr>
-    {props.fields.map((val) => <td>{val}</td>)}
-  </tr>
+  switch (props.kind) {
+    case "header":
+      return <tr>
+        {props.fields.map((val) => <th>{val}</th>)}
+      </tr>
+    case "data":
+      return <tr>
+        {props.values.map((val) => <td>{val}</td>)}
+      </tr>
+  }
 }
 
 function main() {

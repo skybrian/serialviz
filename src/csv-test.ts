@@ -4,11 +4,12 @@ import test, { ExecutionContext } from 'ava';
 import { testProp, fc } from 'ava-fast-check';
 import { csvParseRows, csvFormatRow } from 'd3-dsv';
 
-import { decodeStream, findLines, parseRow } from './csv.js';
+import { decodeStream, findLines, parseFields, parseNumber, parseRow, TableBuffer } from './csv.js';
 
 fc.configureGlobal({ numRuns: 1000 })
 
 const biasedStrings = fc.oneof(
+  fc.constantFrom("-0", "NaN"),
   fc.stringOf(fc.constantFrom("\r", "\n", "x", ",")),
   fc.asciiString(),
   fc.fullUnicodeString()
@@ -157,36 +158,103 @@ testProp('findLines should generate complete lines',
 
 const arbitraryAsciiRecord = fc.array(fc.string(), { minLength: 2 });
 
-testProp('parseRow should allow fields with printable ascii characters', [arbitraryAsciiRecord], async (t, original) => {
+testProp('parseFields should allow fields with printable ascii characters', [arbitraryAsciiRecord], async (t, original) => {
   const line = csvFormatRow(original);
-  const actual = parseRow(1, line);
-  t.deepEqual(actual.fields, original);
+  const actual = parseFields(line);
+  t.deepEqual(actual, original);
 });
 
-testProp('parseRow should parse the same way as d3 or refuse', [biasedStrings], (t, input) => {
-  const actual = parseRow(1, input);
+testProp('parseFields should parse the same way as d3 or refuse', [biasedStrings], (t, input) => {
+  const actual = parseFields(input);
   if (actual) {
     const expected = csvParseRows(input)[0];
-    t.deepEqual(actual.fields, expected);
+    t.deepEqual(actual, expected);
   } else {
     t.is(actual, null);
   }
 }, { examples: [["0\n"], [" 0"]] });
 
-testProp('parseRow should parse quoted strings as one-row records', [fc.string()], (t, input) => {
+testProp('parseFields should parse quoted strings as one-row records', [fc.string()], (t, input) => {
   const quoted = input.includes('"') ? csvFormatRow([input]) : `"${input}"`;
-  const actual = parseRow(1, quoted);
-  t.deepEqual(actual.fields, [input]);
+  const actual = parseFields(quoted);
+  t.deepEqual(actual, [input]);
 });
 
 const arbitraryDoubles = fc.double().map((n) => n + "");
 
-testProp('parseRow should parse doubles as one-row records', [arbitraryDoubles], (t, input) => {
-  t.deepEqual(parseRow(1, input).fields, [input]);
+testProp('parseFields should parse doubles as one-row records', [arbitraryDoubles], (t, input) => {
+  t.deepEqual(parseFields(input), [input]);
 });
+
+const arbitraryNonNumber = fc.string().filter((s) => s.trim() != "NaN" && isNaN(+s) && s.match(/[,"]/) == null);
 
 const arbitraryNonCSV = fc.string().filter((s) => s.match(/^[^ 0-9,\+\-\."][^,]*$/) != null);
 
-testProp('parseRow should reject non-CSV lines', [arbitraryNonCSV], (t, input) => {
-  t.is(parseRow(1, input), null);
+testProp('parseFields should reject non-CSV lines', [arbitraryNonCSV], (t, input) => {
+  t.is(parseFields(input), null);
+});
+
+testProp('parseNumber should accept numbers as themselves', [fc.double({ next: true })], (t, input) => {
+  input = (input == 0) ? 0 : input; // filter -0
+  t.is(parseNumber(`${input}`), input);
+});
+
+testProp('parseNumber should reject non-numbers', [arbitraryNonNumber], (t, input) => {
+  t.is(parseNumber(input), null);
+});
+
+testProp('parseNumber should always return numbers that round-trip', [biasedStrings], (t, input) => {
+  t.plan(1);
+  const n = parseNumber(input);
+  if (n == null) {
+    t.pass();
+    return;
+  }
+  const n2 = parseNumber(`${n}`);
+  t.is(n2, n);
+});
+
+testProp('parseRow should parse rows with all numbers as data', [fc.array(fc.double({ next: true }), { minLength: 1 })], (t, input) => {
+  const row = parseRow(1, input.join(","));
+  const fixedZeros = input.map((n) => n == 0 ? 0 : n);
+  t.deepEqual(row, { key: 1, kind: "data", values: fixedZeros });
+});
+
+testProp('parseRow should parse rows with a non-number as a header, or reject', [fc.array(fc.double()), arbitraryNonNumber, fc.array(fc.double())], (t, prefix, field, suffix) => {
+  const input = ([] as (string | number)[]).concat(prefix, [field], suffix);
+  const row = parseRow(1, input.join(","));
+  if (input.length == 1) {
+    t.is(row, null);
+  } else {
+    t.is(row.kind, "header");
+  }
+});
+
+testProp('TableBuffer should preserve the last data rows added', [fc.nat(), fc.array(fc.boolean())], (t, limit, rowTypes) => {
+
+  const buf = new TableBuffer(limit);
+  t.is(buf.tables.length, 0);
+  let added = 0;
+  for (let isHeader of rowTypes) {
+    if (isHeader) {
+      buf.push({ key: -1, kind: "header", fields: ["abc"] });
+    } else {
+      buf.push({ key: added, kind: "data", values: [added] });
+      added += 1;
+    }
+
+    let expectedKey = limit >= added ? 0 : added - limit;
+    let rowCount = 0;
+    const tables = buf.tables;
+    for (let table of tables) {
+      t.true(table.rows.length > 0, "table should not be empty");
+      for (let row of table.rows) {
+        t.is(row.key, expectedKey);
+        expectedKey++;
+        rowCount++;
+      }
+    }
+    t.is(rowCount, Math.min(limit, added));
+  }
+  return true;
 });
