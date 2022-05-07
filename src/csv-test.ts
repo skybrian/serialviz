@@ -215,14 +215,14 @@ testProp('parseNumber should always return numbers that round-trip', [biasedStri
 });
 
 testProp('parseRow should parse rows with all numbers as data', [fc.array(fc.double({ next: true }), { minLength: 1 })], (t, input) => {
-  const row = parseRow(1, input.join(","));
+  const row = parseRow(input.join(","));
   const fixedZeros = input.map((n) => n == 0 ? 0 : n);
-  t.deepEqual(row, { key: 1, kind: "data", values: fixedZeros });
+  t.deepEqual(row, { kind: "data", values: fixedZeros });
 });
 
 testProp('parseRow should parse rows with a non-number as a header, or reject', [fc.array(fc.double()), arbitraryNonNumber, fc.array(fc.double())], (t, prefix, field, suffix) => {
   const input = ([] as (string | number)[]).concat(prefix, [field], suffix);
-  const row = parseRow(1, input.join(","));
+  const row = parseRow(input.join(","));
   if (input.length == 1) {
     t.is(row, null);
   } else {
@@ -230,31 +230,39 @@ testProp('parseRow should parse rows with a non-number as a header, or reject', 
   }
 });
 
-testProp('TableBuffer should preserve the last data rows added', [fc.nat(), fc.array(fc.boolean())], (t, limit, rowTypes) => {
+testProp('TableBuffer should preserve the last data rows added to the current table', [fc.nat(), fc.array(fc.boolean())], (t, limit, rowTypes) => {
 
   const buf = new TableBuffer(limit);
-  t.is(buf.tables.length, 0);
-  let added = 0;
+  t.is(buf.table, null);
+  let tablesAdded = 0;
+  let rowsAdded = 0;
+  let columnName = null;
   for (let isHeader of rowTypes) {
     if (isHeader) {
-      buf.push({ key: -1, kind: "header", fields: ["abc"] });
+      tablesAdded += 1;
+      columnName = `table ${tablesAdded}`;
+      buf.push({ kind: "header", fields: [columnName] });
+      rowsAdded = 0;
     } else {
-      buf.push({ key: added, kind: "data", values: [added] });
-      added += 1;
+      buf.push({ kind: "data", values: [rowsAdded] });
+      if (tablesAdded == 0) {
+        columnName = "Column 1";
+        tablesAdded = 1;
+      }
+      rowsAdded += 1;
     }
 
-    let expectedKey = limit >= added ? 0 : added - limit;
-    let rowCount = 0;
-    const tables = buf.tables;
-    for (let table of tables) {
-      t.true(table.rows.length > 0, "table should not be empty");
-      for (let row of table.rows) {
-        t.is(row.key, expectedKey);
-        expectedKey++;
-        rowCount++;
-      }
+    const table = buf.table;
+    t.is(table.key, tablesAdded);
+    t.deepEqual(table.columnNames, [columnName], `should have column named "${columnName}"`);
+    t.is(table.rowCount, rowsAdded > limit ? limit : rowsAdded);
+    t.is(table.rowsRemoved, rowsAdded > limit ? rowsAdded - limit : 0);
+    t.is(table.columns.length, 1);
+    const col = table.columns[0];
+    t.is(col.length, rowsAdded > limit ? limit : rowsAdded);
+    for (let i = 0; i < col.length; i++) {
+      t.is(col[i], table.rowsRemoved + i);
     }
-    t.is(rowCount, Math.min(limit, added));
   }
   return true;
-});
+}, { numRuns: 100 });

@@ -3,6 +3,7 @@
 import { h, render, Component, ComponentChildren, toChildArray, createRef } from 'preact';
 import { Terminal } from 'xterm';
 import { decodeStream, findLines, Row, parseRow, TableBuffer, Table } from './csv';
+import * as Plot from "@observablehq/plot";
 
 class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choosing: boolean }> {
   state = { choosing: false }
@@ -24,7 +25,9 @@ class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choos
   }
 
   render() {
-    return <button id="connect" onClick={this.choosePort} disabled={this.state.choosing} class="pure-button pure-button-primary">Connect</button>;
+    return <div>
+      <button id="connect" onClick={this.choosePort} disabled={this.state.choosing} class="pure-button pure-button-primary">Connect</button>
+    </div>;
   }
 }
 
@@ -36,7 +39,7 @@ interface PortState {
   chunksRead: number;
 }
 
-const lineBufferSize = 40;
+const lineBufferSize = 500;
 
 class App {
 
@@ -69,7 +72,7 @@ class App {
 
   renderView() {
     const state = { status: this.status, chunks: this.chunks, chunksRead: this.chunksAdded };
-    render(<PortView state={state} tables={this.rows.tables} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
+    render(<PortView state={state} table={this.rows.table} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
   }
 
   renderChunk(chunk: Uint8Array | string) {
@@ -147,7 +150,7 @@ class App {
       this.readers.push(reader);
 
       for await (let line of findLines(decodeStream(reader))) {
-        const row = parseRow(this.linesSeen, line);
+        const row = parseRow(line);
         if (row) {
           this.rows.push(row);
         }
@@ -213,7 +216,7 @@ class App {
   }
 }
 
-const PortView = (props: { state: PortState, tables: Table[], stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
+const PortView = (props: { state: PortState, table: Table, stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -225,13 +228,16 @@ const PortView = (props: { state: PortState, tables: Table[], stop: () => void, 
         return <button disabled={true} class="pure-button">Stop</button>;
     }
   }
+
+  const table = props.table;
+
   return <div class="port-view">
     <div>
       {button()}
     </div>
-    <TabView labels={["Log", "Table"]}>
+    <TabView labels={["Log", "Plot"]}>
       <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
-      {props.tables.map((table) => <TableView {...table} />)}
+      {table == null ? "" : <PlotView {...table} />}
     </TabView>
   </div>;
 }
@@ -259,13 +265,11 @@ class TabView extends Component<TabProps, { selected: number }> {
             <a href="#" class="pure-menu-link" onClick={() => this.tabClicked(i)}>{label}</a>
           </li>)}
       </ul></div>
-      <div>
-        {children.map((child, i) => {
-          if (i == selected) {
-            return <div class="tab-view-selected">{child}</div>
-          }
-        })}
-      </div>
+      {children.map((child, i) => {
+        if (i == selected) {
+          return <div class="tab-view-selected">{child}</div>
+        }
+      })}
     </div>
   }
 }
@@ -314,22 +318,61 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
   }
 }
 
-function TableView(props: Table) {
-  return <table>
-    {props.rows.map((row) => <RowView {...row} />)}
-  </table>
-}
+class PlotView extends Component<Table> {
+  plotElt = createRef<HTMLDivElement>();
+  lastIndex = null;
 
-function RowView(props: Row) {
-  switch (props.kind) {
-    case "header":
-      return <tr>
-        {props.fields.map((val) => <th>{val}</th>)}
-      </tr>
-    case "data":
-      return <tr>
-        {props.values.map((val) => <td>{val}</td>)}
-      </tr>
+  plot(parent: HTMLDivElement) {
+    parent.textContent = "";
+
+    let width = parent.offsetWidth;
+    width = !width ? 640 : width;
+
+    let height = parent.offsetHeight - 50;
+
+    const columnNames = this.props.columnNames;
+    const cols = this.props.columns;
+    const rowsScrolled = this.props.rowsRemoved;
+    this.lastIndex = this.props.indexes.at(-1);
+
+    let marks = [];
+    if (this.props.rowCount >= 2) { // avoid high cardinality warning in Plot.
+      for (let i = 0; i < columnNames.length; i++) {
+        marks.push(Plot.lineY(cols[i], { x: this.props.indexes, stroke: i }));
+      }
+    }
+
+    parent.appendChild(Plot.plot({
+      width: width,
+      height: height,
+      marks: marks,
+      x: {
+        domain: [rowsScrolled, rowsScrolled + lineBufferSize]
+      },
+      y: {
+        nice: true
+      },
+      color: {
+        type: "categorical",
+        legend: true
+      }
+    }));
+  }
+
+  componentDidMount() {
+    this.plot(this.plotElt.current);
+  }
+
+  shouldComponentUpdate(nextProps: Table): boolean {
+    return this.lastIndex != nextProps.indexes.at(-1);
+  }
+
+  componentDidUpdate() {
+    this.plot(this.plotElt.current);
+  }
+
+  render() {
+    return <div ref={this.plotElt} class="plot-view" />
   }
 }
 

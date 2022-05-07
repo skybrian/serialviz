@@ -2,17 +2,57 @@
 @import "purecss";
 
 body {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+
     margin: 1em;
+
+    display: flex;
+    flex-direction: column;
+}
+
+#app {
+    flex-grow: 1;
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.port-view {
+    flex-grow: 1;
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
 }
 
 .tab-view {
+    flex-grow: 1;
     margin-top: 1em;
+
+    display: flex;
+    flex-direction: column;
 }
 
 .tab-view-selected {
+    flex-grow: 1;
     margin-top: 1em;
+
+    display: flex;
+    flex-direction: column;
 }
 
 #terminal {
     margin-top: 1ex;
+}
+
+.plot-view, .plot-view figure {
+    flex-grow: 1;
+
+    display: flex;
+    flex-direction: column;
 }

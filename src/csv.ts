@@ -127,20 +127,18 @@ export function parseFields(input: string): string[] | null {
 }
 
 export interface HeaderRow {
-  key: number;
   kind: "header";
   fields: string[];
 }
 
 export interface DataRow {
-  key: number;
   kind: "data";
   values: number[];
 }
 
 export type Row = HeaderRow | DataRow;
 
-export function parseRow(key: number, input: string): Row | null {
+export function parseRow(input: string): Row | null {
   const fields = parseFields(input);
   if (!fields) return null;
 
@@ -148,72 +146,94 @@ export function parseRow(key: number, input: string): Row | null {
   for (let i = 0; i < fields.length; i++) {
     const n = parseNumber(fields[i]);
     if (n == null) {
-      return { key: key, kind: "header", fields: fields };
+      return { kind: "header", fields: fields };
     }
     values[i] = n;
   }
-  return { key: key, kind: "data", values: values };
+  return { kind: "data", values: values };
 }
 
 export interface Table {
   key: number;
   columnNames: string[];
-  rows: DataRow[];
+  rowCount: number;
+  rowsRemoved: number;
+  indexes: Float64Array,
+  columns: Float64Array[];
 }
 
 export class TableBuffer {
-  #tables = [] as Table[];
   #tablesSeen = 0;
+  #columnNames = null as string[];
   #rowCount = 0;
+  #rowsRemoved = 0;
+  #indexes = null as Float64Array;
+  #columns = null as Float64Array[];
 
   constructor(readonly rowLimit: number) { }
 
-  get tables(): Table[] {
-    let size = this.#tables.length;
-    let last = this.#tables.at(-1);
-    if (last && last.rows.length == 0) {
-      size--;
-    }
-    return this.#tables.slice(0, size);
+  get table(): Table | null {
+    if (this.#columnNames == null) return null;
+    return {
+      key: this.#tablesSeen,
+      columnNames: this.#columnNames,
+      rowCount: this.#rowCount,
+      rowsRemoved: this.#rowsRemoved,
+      indexes: this.#indexes.slice(0, this.#rowCount),
+      columns: this.#columns.map((col) => col.slice(0, this.#rowCount))
+    };
   }
 
   clear() {
-    this.#tables = [];
     this.#tablesSeen = 0;
+    this.#columnNames = null;
     this.#rowCount = 0;
+    this.#rowsRemoved = 0;
+    this.#indexes = null;
+    this.#columns = null;
   }
 
   push(row: Row) {
     switch (row.kind) {
       case "header":
-        this.pushHeader(row.fields);
+        this.#startTable(row.fields);
         break;
       case "data":
-        if (this.#tables.length == 0) {
-          const columnNames = new Array(row.values.length).map((_, i) => `Column ${i + 1}`);
-          this.pushHeader(columnNames);
+        if (this.#columnNames == null) {
+          const columnNames = new Array(row.values.length).fill(0).map((_, i) => `Column ${i + 1}`);
+          this.#startTable(columnNames);
         }
-        this.#tables.at(-1).rows.push(row);
         this.#rowCount++;
         if (this.#rowCount > this.rowLimit) {
-          this.#tables[0].rows.shift();
-          if (this.#tables[0].rows.length == 0) {
-            this.#tables.shift();
+          // Scroll data to left.
+          this.#indexes.copyWithin(0, 1);
+          for (let col of this.#columns) {
+            col.copyWithin(0, 1);
           }
-          this.#rowCount--;
+          this.#rowsRemoved++;
+          this.#rowCount = this.rowLimit;
         }
+        let y = this.#rowCount - 1;
+        this.#indexes[y] = y + this.#rowsRemoved;
+        for (let i = 0; i < this.#columns.length; i++) {
+          this.#columns[i][y] = row.values.at(i);
+        }
+
         break;
       default:
         throw "unexpected row kind: ${row.kind}";
     }
   }
 
-  pushHeader(columnNames: string[]) {
-    const last = this.#tables.at(-1);
-    if (last && last.rows.length == 0) {
-      this.#tables.pop();
-    }
-    this.#tables.push({ key: this.#tablesSeen, columnNames: columnNames, rows: [] });
+  #startTable(columnNames: string[]) {
     this.#tablesSeen++;
+    this.#columnNames = columnNames;
+    this.#rowCount = 0;
+    this.#rowsRemoved = 0;
+    this.#indexes = new Float64Array(this.rowLimit);
+    this.#columns = Array(columnNames.length);
+    for (let i = 0; i < columnNames.length; i++) {
+      this.#columns[i] = new Float64Array(this.rowLimit);
+    }
   }
 }

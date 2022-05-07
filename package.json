@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
+    "@observablehq/plot": "^0.4.3",
     "preact": "^10.7.1",
     "purecss": "^2.1.0",
     "xterm": "^4.18.0"
