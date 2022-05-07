@@ -118,7 +118,7 @@ class App {
 
       const [chunkStream, lineStream] = this.port.readable.tee();
       this.tasks.push(this.copyToTerminal(chunkStream));
-      this.tasks.push(this.parseLines(lineStream));
+      this.tasks.push(this.parseRows(lineStream));
       this.closePortWhenDone();
       this.renderStatus("reading");
     } catch (e) {
@@ -144,7 +144,7 @@ class App {
     }
   }
 
-  parseLines = async (stream: ReadableStream) => {
+  parseRows = async (stream: ReadableStream) => {
     try {
       const reader = stream.getReader();
       this.readers.push(reader);
@@ -354,7 +354,8 @@ class PlotView extends Component<Table> {
       },
       color: {
         type: "categorical",
-        legend: true
+        legend: true,
+        tickFormat: i => columnNames[i],
       }
     }));
   }
@@ -364,7 +365,7 @@ class PlotView extends Component<Table> {
   }
 
   shouldComponentUpdate(nextProps: Table): boolean {
-    return this.lastIndex != nextProps.indexes.at(-1);
+    return !document.hidden && this.lastIndex != nextProps.indexes.at(-1);
   }
 
   componentDidUpdate() {
