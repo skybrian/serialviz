@@ -4,7 +4,8 @@
     "@observablehq/plot": "^0.4.3",
     "preact": "^10.7.1",
     "purecss": "^2.1.0",
-    "xterm": "^4.18.0"
+    "xterm": "^4.18.0",
+    "xterm-addon-fit": "^0.5.0"
   },
   "devDependencies": {
     "@types/d3-dsv": "^3.0.0",

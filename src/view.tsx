@@ -3,6 +3,7 @@
 import { h, Component, ComponentChildren, toChildArray, createRef } from 'preact';
 import { Table } from './csv';
 import { Terminal } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
 import { PortState, LogLine, logHeadLimit } from './state';
 
@@ -77,7 +78,13 @@ class TabView extends Component<TabProps, { selected: number }> {
   }
 }
 
-class TermView extends Component<{ logKey: number, lines: LogLine[], scrollback: number }> {
+interface TermProps {
+  logKey: number;
+  lines: LogLine[];
+  scrollback: number;
+}
+
+class TermView extends Component<TermProps> {
   terminal: Terminal;
 
   currentLog = 0;
@@ -90,8 +97,19 @@ class TermView extends Component<{ logKey: number, lines: LogLine[], scrollback:
       rows: 50,
       scrollback: this.props.scrollback,
     });
+    const fitAddon = new FitAddon();
+    this.terminal.loadAddon(fitAddon);
     this.terminal.open(this.terminalElt.current);
+    fitAddon.fit();
     this.componentDidUpdate();
+  }
+
+  shouldComponentUpdate(nextProps: TermProps): boolean {
+    return (
+      nextProps.logKey != this.currentLog ||
+      nextProps.lines.length == 0 ||
+      nextProps.lines.at(-1).key != this.lastLineSeen
+    );
   }
 
   componentDidUpdate() {
