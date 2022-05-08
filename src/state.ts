@@ -2,14 +2,16 @@
 
 import { TableBuffer, Table, Row } from './csv';
 
-const logLimit = 100;
-const lineBufferSize = 500;
+export const logHeadLimit = 40;
+const logTailLimit = 100;
+const tableBufferLimit = 500;
 
 type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
 
 export interface Log {
   key: number,
-  lines: LogLine[]
+  head: LogLine[],
+  tail: LogLine[]
 }
 
 export interface LogLine {
@@ -25,10 +27,10 @@ export interface PortState {
 export class AppState extends EventTarget {
   #status = "start" as PortStatus;
 
-  #log = { key: 0, lines: [] } as Log;
+  #log = { key: 0, head: [], tail: [] } as Log;
   #linesAdded = 0;
 
-  #rows = new TableBuffer(lineBufferSize);
+  #rows = new TableBuffer(tableBufferLimit);
 
   constructor() {
     super();
@@ -43,8 +45,8 @@ export class AppState extends EventTarget {
   }
 
   get log(): Log {
-    if (this.#log.lines.length > logLimit) {
-      this.#log.lines = this.#log.lines.slice(-logLimit);
+    if (this.#log.tail.length > logTailLimit) {
+      this.#log.tail = this.#log.tail.slice(-logTailLimit);
     }
     return this.#log;
   }
@@ -77,7 +79,13 @@ export class AppState extends EventTarget {
   }
 
   #pushLog(line: string): void {
-    this.#log.lines.push({ key: this.#linesAdded, value: line });
+    const logLine = { key: this.#linesAdded, value: line };
+
+    if (this.#log.head.length < logHeadLimit) {
+      this.#log.head.push(logLine);
+    }
+    this.#log.tail.push(logLine);
+
     this.#linesAdded++;
   }
 
@@ -94,7 +102,7 @@ export class AppState extends EventTarget {
     }
 
     if (wanted == "connecting") {
-      this.#log = { key: this.#log.key + 1, lines: [] };
+      this.#log = { key: this.#log.key + 1, head: [], tail: [] };
       this.#linesAdded = 0;
       this.#rows.clear();
     }

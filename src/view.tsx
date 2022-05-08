@@ -4,7 +4,7 @@ import { h, Component, ComponentChildren, toChildArray, createRef } from 'preact
 import { Table } from './csv';
 import { Terminal } from 'xterm';
 import * as Plot from "@observablehq/plot";
-import { PortState, Log } from './state';
+import { PortState, LogLine, logHeadLimit } from './state';
 
 export const ConnectView = (props: { onClick: () => void }) => {
   return <div>
@@ -25,14 +25,16 @@ export const AppView = (props: { state: PortState, table: Table, stop: () => voi
     }
   }
 
+  const log = props.state.log;
   const table = props.table;
 
   return <div class="port-view">
     <div>
       {button()}
     </div>
-    <TabView labels={["Log", "Plot"]}>
-      <TermView log={props.state.log} />
+    <TabView labels={["Head", "Tail", "Plot"]} defaultSelected={1} >
+      <TermView logKey={log.key} lines={log.head} scrollback={logHeadLimit} />
+      <TermView logKey={log.key} lines={log.tail} scrollback={0} />
       {table == null ? "" : <PlotView {...table} />}
     </TabView>
   </div>;
@@ -40,11 +42,16 @@ export const AppView = (props: { state: PortState, table: Table, stop: () => voi
 
 interface TabProps {
   labels: string[];
+  defaultSelected: number;
   children: ComponentChildren;
 }
 
 class TabView extends Component<TabProps, { selected: number }> {
   state = { selected: 0 }
+
+  componentDidMount(): void {
+    this.setState({ selected: this.props.defaultSelected })
+  }
 
   tabClicked(choice: number) {
     this.setState({ selected: choice });
@@ -70,29 +77,30 @@ class TabView extends Component<TabProps, { selected: number }> {
   }
 }
 
-class TermView extends Component<{ log: Log }> {
-  terminal = new Terminal({
-    rows: 50,
-    scrollback: 0,
-  });
+class TermView extends Component<{ logKey: number, lines: LogLine[], scrollback: number }> {
+  terminal: Terminal;
+
   currentLog = 0;
   lastLineSeen = -1;
 
   terminalElt = createRef();
 
   componentDidMount() {
+    this.terminal = new Terminal({
+      rows: 50,
+      scrollback: this.props.scrollback,
+    });
     this.terminal.open(this.terminalElt.current);
     this.componentDidUpdate();
   }
 
   componentDidUpdate() {
-    const log = this.props.log;
-    if (this.currentLog != log.key) {
+    if (this.currentLog != this.props.logKey) {
       this.terminal.clear();
-      this.currentLog = log.key;
+      this.currentLog = this.props.logKey;
       this.lastLineSeen = -1;
     }
-    for (let line of log.lines) {
+    for (let line of this.props.lines) {
       if (line.key > this.lastLineSeen) {
         this.terminal.writeln(line.value);
         this.lastLineSeen = line.key;
