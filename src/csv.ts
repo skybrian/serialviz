@@ -157,6 +157,7 @@ export interface Table {
   key: number;
   columnNames: string[];
   rowCount: number;
+  rowLimit: number;
   rowsRemoved: number;
   indexes: Float64Array,
   columns: Float64Array[];
@@ -178,6 +179,7 @@ export class TableBuffer {
       key: this.#tablesSeen,
       columnNames: this.#columnNames,
       rowCount: this.#rowCount,
+      rowLimit: this.rowLimit,
       rowsRemoved: this.#rowsRemoved,
       indexes: this.#indexes.slice(0, this.#rowCount),
       columns: this.#columns.map((col) => col.slice(0, this.#rowCount))

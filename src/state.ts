@@ -1,6 +1,9 @@
 'use strict';
 
+import { TableBuffer, Table, Row } from './csv';
+
 const logLimit = 100;
+const lineBufferSize = 500;
 
 type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
 
@@ -20,10 +23,12 @@ export interface PortState {
 }
 
 export class AppState extends EventTarget {
-  #status = "connecting" as PortStatus;
+  #status = "start" as PortStatus;
 
   #log = { key: 0, lines: [] } as Log;
   #linesAdded = 0;
+
+  #rows = new TableBuffer(lineBufferSize);
 
   constructor() {
     super();
@@ -44,7 +49,11 @@ export class AppState extends EventTarget {
     return this.#log;
   }
 
-  canChangePort(request: PortStatus): boolean {
+  get table(): Table {
+    return this.#rows.table;
+  }
+
+  canChangeTo(request: PortStatus): boolean {
     switch (this.status) {
       case "start":
         return request == "connecting";
@@ -72,33 +81,43 @@ export class AppState extends EventTarget {
     this.#linesAdded++;
   }
 
-  requestPortChange(request: PortStatus, options = {} as { message?: any, optional?: boolean }): boolean {
-    if (!this.canChangePort(request)) {
+  requestClose = (): boolean => this.requestChange("closed", { optional: true }) || this.requestChange("closing");
+
+  requestRestart = (): boolean => this.requestChange("connecting");
+
+  requestChange(wanted: PortStatus, options = {} as { message?: any, optional?: boolean }): boolean {
+    if (!this.canChangeTo(wanted)) {
       if (!options.optional) {
-        console.log(`ignored port change: ${this.status} => ${request}`);
+        console.log(`ignored port change: ${this.status} => ${wanted}`);
       }
       return false;
     }
 
-    if (request == "connecting") {
+    if (wanted == "connecting") {
       this.#log = { key: this.#log.key + 1, lines: [] };
       this.#linesAdded = 0;
+      this.#rows.clear();
     }
 
     if (options.message) {
       this.pushLog(`*** ${options.message} ***`);
     }
 
-    this.#status = request;
+    this.#status = wanted;
+    this.dispatchEvent(new CustomEvent("status"));
     this.#save();
     return true;
   }
 
-  fatal(message: any) {
-    this.requestPortChange("portGone", { message: message });
+  pushRow(row: Row): void {
+    this.#rows.push(row);
   }
 
-  #save() {
+  fatal(message: any): void {
+    this.requestChange("portGone", { message: message });
+  }
+
+  #save(): void {
     this.dispatchEvent(new CustomEvent("save"));
   }
 }
