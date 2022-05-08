@@ -1,9 +1,10 @@
 'use strict';
 
 import { h, render, Component, ComponentChildren, toChildArray, createRef } from 'preact';
-import { Terminal } from 'xterm';
 import { decodeStream, findLines, Row, parseRow, TableBuffer, Table } from './csv';
+import { Terminal } from 'xterm';
 import * as Plot from "@observablehq/plot";
+import { PortState, Log, AppState } from './state';
 
 class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choosing: boolean }> {
   state = { choosing: false }
@@ -31,14 +32,6 @@ class Start extends Component<{ onConnect: (port: SerialPort) => void }, { choos
   }
 }
 
-type PortStatus = "connecting" | "reading" | "closing" | "closed" | "portGone";
-
-interface PortState {
-  status: PortStatus;
-  chunks: (Uint8Array | string)[];
-  chunksRead: number;
-}
-
 const lineBufferSize = 500;
 
 class App {
@@ -46,11 +39,9 @@ class App {
   port: SerialPort;
   appElt: Element;
 
-  status = "connecting" as PortStatus;
-  chunks = [] as (Uint8Array | string)[];
-  chunksAdded = 0;
+  state = new AppState();
 
-  linesSeen = 0;
+  rowsSeen = 0;
   rows = new TableBuffer(lineBufferSize);
 
   readers = [] as ReadableStreamGenericReader[];
@@ -68,38 +59,18 @@ class App {
     });
     this.renderView();
     this.openPort();
+
+    this.state.addEventListener("save", () => {
+      this.renderView();
+    });
   }
 
   renderView() {
-    const state = { status: this.status, chunks: this.chunks, chunksRead: this.chunksAdded };
-    render(<PortView state={state} table={this.rows.table} stop={this.stop} restart={this.restart} finishedChunks={this.finishedChunks} />, this.appElt);
-  }
-
-  renderChunk(chunk: Uint8Array | string) {
-    this.chunks = this.chunks.concat([chunk]);
-    this.chunksAdded += 1;
-    this.renderView();
-  }
-
-  renderMessage(message: string) {
-    this.renderChunk(`\r\n*** ${message} ***\r\n`);
-  }
-
-  renderStatus(status: PortStatus, options = {} as { message: string }) {
-    this.status = status;
-    if (options.message) {
-      this.renderMessage(options.message);
-    } else {
-      this.renderView();
-    }
-  }
-
-  renderFatal(message: any) {
-    this.renderStatus("portGone", { message: message + "" });
+    render(<PortView state={this.state.portState} table={this.rows.table} stop={this.requestClose} restart={this.requestRestart} />, this.appElt);
   }
 
   openPort = async () => {
-    if (this.status != "connecting") return;
+    if (this.state.status != "connecting") return;
     // Tell other windows to close the serial port.
     // This ensures we don't try to read the same serial port at the same time.
     // See: https://bugs.chromium.org/p/chromium/issues/detail?id=1319178
@@ -107,7 +78,7 @@ class App {
 
     // Give them a chance to pause.
     await new Promise(resolve => setTimeout(resolve, 100));
-    if (this.status != "connecting") return;
+    if (this.state.status != "connecting") return;
 
     try {
       await this.port.open({
@@ -116,13 +87,14 @@ class App {
         flowControl: "hardware",
       });
 
-      const [chunkStream, lineStream] = this.port.readable.tee();
-      this.tasks.push(this.copyToTerminal(chunkStream));
-      this.tasks.push(this.parseRows(lineStream));
+      if (this.state.requestPortChange("reading")) {
+        const [chunkStream, lineStream] = this.port.readable.tee();
+        this.tasks.push(this.copyToTerminal(chunkStream));
+        this.tasks.push(this.parseRows(lineStream));
+      }
       this.closePortWhenDone();
-      this.renderStatus("reading");
     } catch (e) {
-      this.renderFatal(e);
+      this.state.fatal(e);
       return;
     }
   }
@@ -131,12 +103,8 @@ class App {
     const reader = stream.getReader();
     this.readers.push(reader);
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          return;
-        }
-        this.renderChunk(value);
+      for await (let line of findLines(decodeStream(reader))) {
+        this.state.pushLog(line);
       }
     } finally {
       reader.releaseLock();
@@ -154,7 +122,7 @@ class App {
         if (row) {
           this.rows.push(row);
         }
-        this.linesSeen++;
+        this.rowsSeen++;
       }
     } finally {
       await stream.cancel();
@@ -166,57 +134,41 @@ class App {
       try {
         await task;
       } catch (e) {
-        this.renderFatal(e);
+        this.state.fatal(e);
       }
     }
 
     try {
       await this.port.close();
-      if (this.status != "portGone") {
-        this.renderStatus("closed", { message: "Closed" });
-      }
+      this.state.requestPortChange("closed", { message: "Closed" });
     } catch (e) {
-      this.renderFatal(e);
+      this.state.fatal(e);
     }
   }
 
-  requestClose() {
-    for (let reader of this.readers) {
-      this.tasks.push(reader.cancel());
-    }
-    this.readers = [];
-  }
-
-  stop = () => {
-    if (this.status == "reading") {
-      this.renderStatus("closing");
-      this.requestClose();
-    }
-  }
-
-  restart = () => {
-    if (this.status == "closed") {
-      this.chunks = [];
-      this.chunksAdded = 0;
-      this.linesSeen = 0;
-      this.rows.clear();
-      this.renderStatus("connecting");
-      this.openPort();
-    }
-  }
-
-  finishedChunks = (done: number) => {
-    const todo = this.chunksAdded - done;
-    if (todo == this.chunks.length) return; // no change
-    if (todo == 0) {
-      this.chunks = [];
+  requestClose = (): boolean => {
+    if (this.state.requestPortChange("closed", { optional: true })) {
+      return true;
+    } else if (this.state.requestPortChange("closing")) {
+      for (let reader of this.readers) {
+        this.tasks.push(reader.cancel());
+      }
+      this.readers = [];
+      return true;
     } else {
-      this.chunks = this.chunks.slice(-todo);
+      return false;
     }
+  }
+
+  requestRestart = (): boolean => {
+    if (!this.state.requestPortChange("connecting")) return false;
+    this.rowsSeen = 0;
+    this.rows.clear();
+    this.openPort();
   }
 }
 
-const PortView = (props: { state: PortState, table: Table, stop: () => void, restart: () => void, finishedChunks: (n: number) => void }) => {
+const PortView = (props: { state: PortState, table: Table, stop: () => void, restart: () => void }) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -236,7 +188,7 @@ const PortView = (props: { state: PortState, table: Table, stop: () => void, res
       {button()}
     </div>
     <TabView labels={["Log", "Plot"]}>
-      <TermView chunks={props.state.chunks} chunksRead={props.state.chunksRead} finishedChunks={props.finishedChunks} />
+      <TermView log={props.state.log} />
       {table == null ? "" : <PlotView {...table} />}
     </TabView>
   </div>;
@@ -274,16 +226,15 @@ class TabView extends Component<TabProps, { selected: number }> {
   }
 }
 
-class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: number, finishedChunks: (n: number) => void }, {}> {
+class TermView extends Component<{ log: Log }> {
   terminal = new Terminal({
     rows: 50,
     scrollback: 0,
   });
-  chunksWritten = 0;
+  currentLog = 0;
+  lastLineSeen = -1;
 
   terminalElt = createRef();
-
-  reader = null as ReadableStreamDefaultReader<Uint8Array>;
 
   componentDidMount() {
     this.terminal.open(this.terminalElt.current);
@@ -291,30 +242,22 @@ class TermView extends Component<{ chunks: (Uint8Array | string)[], chunksRead: 
   }
 
   componentDidUpdate() {
-    const sent = this.props.chunksRead;
-    if (sent == 0) {
-      if (this.chunksWritten > 0) {
-        this.terminal.clear();
-        this.chunksWritten = 0;
+    const log = this.props.log;
+    if (this.currentLog != log.key) {
+      this.terminal.clear();
+      this.currentLog = log.key;
+      this.lastLineSeen = -1;
+    }
+    for (let line of log.lines) {
+      if (line.key > this.lastLineSeen) {
+        this.terminal.writeln(line.value);
+        this.lastLineSeen = line.key;
       }
-      return;
-    }
-
-    const chunks = this.props.chunks;
-    let start = chunks.length - (sent - this.chunksWritten);
-    if (start < 0) start = 0;
-    let todo = chunks.slice(start);
-    for (let chunk of todo) {
-      this.terminal.write(chunk);
-    }
-    this.chunksWritten += todo.length;
-    if (todo.length > 0) {
-      this.props.finishedChunks(this.chunksWritten);
     }
   }
 
   render() {
-    return <div id="terminal" ref={this.terminalElt}></div>
+    return <div class="term-view" ref={this.terminalElt}></div>
   }
 }
 

@@ -7,8 +7,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-
-    margin: 1em;
+    padding: 1em;
 
     display: flex;
     flex-direction: column;
@@ -17,6 +16,7 @@ body {
 #app {
     flex-grow: 1;
     width: 100%;
+    padding-bottom: 2em;
 
     display: flex;
     flex-direction: column;
@@ -46,11 +46,8 @@ body {
     flex-direction: column;
 }
 
-#terminal {
-    margin-top: 1ex;
-}
-
-.plot-view, .plot-view figure {
+.plot-view,
+.plot-view figure {
     flex-grow: 1;
 
     display: flex;
