@@ -5,7 +5,7 @@ import { Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { PortState, LogLine, logHeadLimit } from './state';
+import { PortState, LogLine } from './state';
 
 export const ConnectView = (props: { onClick: () => void }) => {
   return <div>
@@ -13,7 +13,7 @@ export const ConnectView = (props: { onClick: () => void }) => {
   </div>;
 }
 
-export const AppView = (props: { state: PortState, table: Table, stop: () => void, restart: () => void }) => {
+export const AppView = (props: { state: PortState, table: Table, windowChanges: number, stop: () => void, restart: () => void }) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -34,9 +34,9 @@ export const AppView = (props: { state: PortState, table: Table, stop: () => voi
       {button()}
     </div>
     <TabView labels={["Head", "Tail", "Plot"]} defaultSelected={1} >
-      <TermView logKey={log.key} lines={log.head} scrollback={logHeadLimit} />
-      <TermView logKey={log.key} lines={log.tail} scrollback={0} />
-      {table == null ? "" : <PlotView {...table} />}
+      <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
+      <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
+      {table == null ? "" : <PlotView table={table} windowChanges={props.windowChanges} />}
     </TabView>
   </div>;
 }
@@ -81,47 +81,69 @@ class TabView extends Component<TabProps, { selected: number }> {
 interface TermProps {
   logKey: number;
   lines: LogLine[];
-  scrollback: number;
+  truncateRows?: boolean;
+  windowChanges: number;
 }
 
 class TermView extends Component<TermProps> {
   terminal: Terminal;
+  fitAddon: FitAddon;
 
   currentLog = 0;
-  lastLineSeen = -1;
+  lastKeyWritten = -1;
+  linesWritten = 0;
+  lastWindowChangeSeen: number;
 
   terminalElt = createRef();
 
   componentDidMount() {
     this.terminal = new Terminal({
-      rows: 50,
-      scrollback: this.props.scrollback,
+      scrollback: 0,
     });
-    const fitAddon = new FitAddon();
-    this.terminal.loadAddon(fitAddon);
+    this.fitAddon = new FitAddon();
+    this.terminal.loadAddon(this.fitAddon);
     this.terminal.open(this.terminalElt.current);
-    fitAddon.fit();
+    this.fitAddon.fit();
     this.componentDidUpdate();
   }
 
   shouldComponentUpdate(nextProps: TermProps): boolean {
+    const nextKey = nextProps.lines.length == 0 ? -1 : nextProps.lines.at(-1).key;
+    const thisKey = this.props.lines.length == 0 ? -1 : this.props.lines.at(-1).key;
     return (
-      nextProps.logKey != this.currentLog ||
-      nextProps.lines.length == 0 ||
-      nextProps.lines.at(-1).key != this.lastLineSeen
+      nextProps.logKey != this.props.logKey ||
+      nextKey != thisKey ||
+      nextProps.windowChanges != this.lastWindowChangeSeen
     );
   }
 
   componentDidUpdate() {
-    if (this.currentLog != this.props.logKey) {
+    const newDim = this.fitAddon.proposeDimensions();
+
+    // Clear terminal if needed
+    if (this.currentLog != this.props.logKey ||
+      (this.props.truncateRows && newDim.rows != this.terminal.rows)) {
       this.terminal.clear();
       this.currentLog = this.props.logKey;
-      this.lastLineSeen = -1;
+      this.lastKeyWritten = -1;
+      this.linesWritten = 0;
     }
+
+    // Resize terminal if needed
+    if (this.props.windowChanges != this.lastWindowChangeSeen) {
+      this.fitAddon.fit();
+      this.lastWindowChangeSeen = this.props.windowChanges;
+    }
+
+    // Append lines if needed
     for (let line of this.props.lines) {
-      if (line.key > this.lastLineSeen) {
+      if (this.props.truncateRows && this.linesWritten >= this.terminal.rows - 1) {
+        break;
+      }
+      if (line.key > this.lastKeyWritten) {
         this.terminal.writeln(line.value);
-        this.lastLineSeen = line.key;
+        this.lastKeyWritten = line.key;
+        this.linesWritten++;
       }
     }
   }
@@ -131,7 +153,12 @@ class TermView extends Component<TermProps> {
   }
 }
 
-class PlotView extends Component<Table> {
+interface PlotProps {
+  table: Table;
+  windowChanges: number;
+}
+
+class PlotView extends Component<PlotProps> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
@@ -143,15 +170,15 @@ class PlotView extends Component<Table> {
 
     let height = parent.offsetHeight - 50;
 
-    const columnNames = this.props.columnNames;
-    const cols = this.props.columns;
-    const rowsScrolled = this.props.rowsRemoved;
-    this.lastIndex = this.props.indexes.at(-1);
+    const columnNames = this.props.table.columnNames;
+    const cols = this.props.table.columns;
+    const rowsScrolled = this.props.table.rowsRemoved;
+    this.lastIndex = this.props.table.indexes.at(-1);
 
     let marks = [];
-    if (this.props.rowCount >= 2) { // avoid high cardinality warning in Plot.
+    if (this.props.table.rowCount >= 2) { // avoid high cardinality warning in Plot.
       for (let i = 0; i < columnNames.length; i++) {
-        marks.push(Plot.lineY(cols[i], { x: this.props.indexes, stroke: i }));
+        marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: i }));
       }
     }
 
@@ -160,7 +187,7 @@ class PlotView extends Component<Table> {
       height: height,
       marks: marks,
       x: {
-        domain: [rowsScrolled, rowsScrolled + this.props.rowLimit]
+        domain: [rowsScrolled, rowsScrolled + this.props.table.rowLimit]
       },
       y: {
         nice: true
@@ -177,8 +204,8 @@ class PlotView extends Component<Table> {
     this.plot(this.plotElt.current);
   }
 
-  shouldComponentUpdate(nextProps: Table): boolean {
-    return !document.hidden && this.lastIndex != nextProps.indexes.at(-1);
+  shouldComponentUpdate(nextProps: PlotProps): boolean {
+    return (!document.hidden && this.lastIndex != nextProps.table.indexes.at(-1)) || this.props.windowChanges != nextProps.windowChanges;
   }
 
   componentDidUpdate() {

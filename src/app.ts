@@ -102,6 +102,7 @@ const main = async () => {
     render(AppView({
       state: state.portState,
       table: state.table,
+      windowChanges: state.windowChanges,
       stop: state.requestClose,
       restart: state.requestRestart
     }), appElt);
@@ -109,7 +110,7 @@ const main = async () => {
 
   const task = new PortReaderTask(port, state);
 
-  const connectUnlessBusy = async () => {
+  const connectUnlessCancelled = async () => {
     // Tell other windows to close the serial port.
     // This ensures we don't try to read the same serial port at the same time.
     // See: https://bugs.chromium.org/p/chromium/issues/detail?id=1319178
@@ -120,6 +121,8 @@ const main = async () => {
 
     if (state.status == "connecting") {
       task.connect();
+    } else {
+      console.log("connect cancelled");
     }
   }
 
@@ -133,13 +136,19 @@ const main = async () => {
   state.addEventListener("status", () => {
     switch (state.status) {
       case "connecting":
-        connectUnlessBusy();
+        connectUnlessCancelled();
         break;
       case "closing":
         task.cancel();
         break;
     }
   });
+
+  let timeoutID = null as number;
+  window.addEventListener("resize", function() {
+    window.clearTimeout(timeoutID);
+    timeoutID = window.setTimeout(() => { state.windowChanged() }, 250);
+  })
 
   state.requestChange("connecting");
 }

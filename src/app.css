@@ -15,6 +15,7 @@ body {
 
 #app {
     flex-grow: 1;
+    height: 50%;
     width: 100%;
     padding-bottom: 2em;
 
@@ -24,6 +25,7 @@ body {
 
 .port-view {
     flex-grow: 1;
+    height: 50%;
     width: 100%;
 
     display: flex;
@@ -32,6 +34,7 @@ body {
 
 .tab-view {
     flex-grow: 1;
+    height: 50%;
     margin-top: 1em;
 
     display: flex;
@@ -40,10 +43,17 @@ body {
 
 .tab-view-selected {
     flex-grow: 1;
+    height: 50%;
     margin-top: 1em;
 
     display: flex;
     flex-direction: column;
+}
+
+.term-view {
+    flex-grow: 1;
+    height: 50%;
+    overflow: hidden; /* terminal will resize */
 }
 
 .plot-view,

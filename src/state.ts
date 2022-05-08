@@ -2,7 +2,7 @@
 
 import { TableBuffer, Table, Row } from './csv';
 
-export const logHeadLimit = 40;
+const logHeadLimit = 100;
 const logTailLimit = 100;
 const tableBufferLimit = 500;
 
@@ -32,6 +32,8 @@ export class AppState extends EventTarget {
 
   #rows = new TableBuffer(tableBufferLimit);
 
+  #windowChanges = 0;
+
   constructor() {
     super();
   }
@@ -45,14 +47,15 @@ export class AppState extends EventTarget {
   }
 
   get log(): Log {
-    if (this.#log.tail.length > logTailLimit) {
-      this.#log.tail = this.#log.tail.slice(-logTailLimit);
-    }
     return this.#log;
   }
 
   get table(): Table {
     return this.#rows.table;
+  }
+
+  get windowChanges(): number {
+    return this.#windowChanges;
   }
 
   canChangeTo(request: PortStatus): boolean {
@@ -81,11 +84,19 @@ export class AppState extends EventTarget {
   #pushLog(line: string): void {
     const logLine = { key: this.#linesAdded, value: line };
 
-    if (this.#log.head.length < logHeadLimit) {
-      this.#log.head.push(logLine);
+    let  head = this.#log.head;
+    if (head.length < logHeadLimit) {
+      head = head.concat([logLine]);
     }
-    this.#log.tail.push(logLine);
 
+    let tail = this.#log.tail;
+    if (tail.length < logTailLimit) {
+      tail = tail.concat([logLine]);
+    } else {
+      tail = tail.slice(1).concat(logLine);
+    }
+
+    this.#log = { key: this.#log.key, head: head, tail: tail };
     this.#linesAdded++;
   }
 
@@ -123,6 +134,11 @@ export class AppState extends EventTarget {
 
   fatal(message: any): void {
     this.requestChange("portGone", { message: message });
+  }
+
+  windowChanged(): void {
+    this.#windowChanges++;
+    this.#save();
   }
 
   #save(): void {
