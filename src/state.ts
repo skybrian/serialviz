@@ -24,6 +24,10 @@ export interface PortState {
   log: Log;
 }
 
+export interface PlotSettings {
+  selectedColumns: Set<string>;
+}
+
 export class AppState extends EventTarget {
   #status = "start" as PortStatus;
 
@@ -31,6 +35,7 @@ export class AppState extends EventTarget {
   #linesAdded = 0;
 
   #rows = new TableBuffer(tableBufferLimit);
+  #plotSettings = {selectedColumns: new Set<string>()};
 
   #windowChanges = 0;
 
@@ -52,6 +57,10 @@ export class AppState extends EventTarget {
 
   get table(): Table {
     return this.#rows.table;
+  }
+
+  get plotSettings(): PlotSettings {
+    return this.#plotSettings;
   }
 
   get windowChanges(): number {
@@ -129,7 +138,27 @@ export class AppState extends EventTarget {
   }
 
   pushRow(row: Row): void {
+    const tableKey = this.#rows.table?.key;
+
     this.#rows.push(row);
+
+    if (tableKey != this.#rows.table?.key && this.#plotSettings.selectedColumns.size == 0) {
+      const firstColumn = this.#rows.table.columnNames.at(0);
+      if (firstColumn) {
+        this.toggleColumn(firstColumn);
+      }
+    }
+  }
+
+  toggleColumn = (name: string): void => {
+    const cols = new Set(this.#plotSettings.selectedColumns);
+    if (cols.has(name)) {
+      cols.delete(name);
+    } else {
+      cols.add(name);
+    }
+    this.#plotSettings = {...this.#plotSettings, selectedColumns: cols };
+    this.#save();
   }
 
   fatal(message: any): void {

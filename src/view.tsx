@@ -5,7 +5,7 @@ import { Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { PortState, LogLine } from './state';
+import { PortState, LogLine, PlotSettings } from './state';
 
 export const ConnectView = (props: { onClick: () => void }) => {
   return <div>
@@ -13,7 +13,10 @@ export const ConnectView = (props: { onClick: () => void }) => {
   </div>;
 }
 
-export const AppView = (props: { state: PortState, table: Table, windowChanges: number, stop: () => void, restart: () => void }) => {
+export const AppView = (props: {
+  state: PortState, table: Table, plotSettings: PlotSettings, windowChanges: number,
+  stop: () => void, restart: () => void, toggleColumn: (name: string) => void,
+}) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -36,7 +39,7 @@ export const AppView = (props: { state: PortState, table: Table, windowChanges: 
     <TabView labels={["Head", "Tail", "Plot"]} defaultSelected={1} >
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
-      {table == null ? "" : <PlotView table={table} windowChanges={props.windowChanges} />}
+      {table == null ? "" : <PlotView table={table}  settings={props.plotSettings} windowChanges={props.windowChanges} toggleColumn={props.toggleColumn} />}
     </TabView>
   </div>;
 }
@@ -153,14 +156,36 @@ class TermView extends Component<TermProps> {
   }
 }
 
+function getColorRange(colorCount: number, observablePlotColorScheme: string): string[] {
+  const colorDomain = new Array(colorCount).fill(0).map((_, i) => i);
+
+  const colorScale = Plot.scale({
+    color: {
+      type: "categorical",
+      scheme: observablePlotColorScheme,
+      domain: colorDomain
+    }
+  });
+
+  return colorDomain.map((d) => colorScale.apply(d));
+}
+
+const colorRange = getColorRange(10, "tableau10")
+
 interface PlotProps {
   table: Table;
+  settings: PlotSettings;
   windowChanges: number;
+  toggleColumn: (name: string) => void;
 }
 
 class PlotView extends Component<PlotProps> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
+
+  colorAt(i: number): string {
+    return colorRange[i];
+  }
 
   plot(parent: HTMLDivElement) {
     parent.textContent = "";
@@ -178,7 +203,9 @@ class PlotView extends Component<PlotProps> {
     let marks = [];
     if (this.props.table.rowCount >= 2) { // avoid high cardinality warning in Plot.
       for (let i = 0; i < columnNames.length; i++) {
-        marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: i }));
+        if (this.props.settings.selectedColumns.has(columnNames[i])) {
+          marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: this.colorAt(i) }));
+        }
       }
     }
 
@@ -190,12 +217,8 @@ class PlotView extends Component<PlotProps> {
         domain: [rowsScrolled, rowsScrolled + this.props.table.rowLimit]
       },
       y: {
-        nice: true
-      },
-      color: {
-        type: "categorical",
-        legend: true,
-        tickFormat: i => columnNames[i],
+        nice: true,
+        zero: true
       }
     }));
   }
@@ -205,7 +228,9 @@ class PlotView extends Component<PlotProps> {
   }
 
   shouldComponentUpdate(nextProps: PlotProps): boolean {
-    return (!document.hidden && this.lastIndex != nextProps.table.indexes.at(-1)) || this.props.windowChanges != nextProps.windowChanges;
+    return (!document.hidden && this.lastIndex != nextProps.table.indexes.at(-1)) ||
+      this.props.windowChanges != nextProps.windowChanges ||
+      this.props.settings != nextProps.settings;
   }
 
   componentDidUpdate() {
@@ -213,6 +238,17 @@ class PlotView extends Component<PlotProps> {
   }
 
   render() {
-    return <div ref={this.plotElt} class="plot-view" />
+    const makeToggleButton = (name: string, i: number) => {
+      return <button
+        onClick={() => this.props.toggleColumn(name)}
+        class={"pure-button" + (this.props.settings.selectedColumns.has(name) ? " button-pressed" : "")}
+      ><span class="swatch" style={`background-color: ${this.colorAt(i)}`}> </span> {name}</button>
+    };
+    return <div class="plot-view">
+      <div class="plot-left" role="group">
+        {this.props.table.columnNames.map((name, i) => makeToggleButton(name, i))}
+      </div>
+      <div class="plot-right" ref={this.plotElt} />
+    </div>;
   }
 }

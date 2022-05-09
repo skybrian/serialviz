@@ -102,9 +102,11 @@ const main = async () => {
     render(AppView({
       state: state.portState,
       table: state.table,
+      plotSettings: state.plotSettings,
       windowChanges: state.windowChanges,
       stop: state.requestClose,
-      restart: state.requestRestart
+      restart: state.requestRestart,
+      toggleColumn: state.toggleColumn
     }), appElt);
   });
 
