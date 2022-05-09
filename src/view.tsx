@@ -5,7 +5,7 @@ import { Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { PortState, LogLine, PlotSettings } from './state';
+import { LogLine, PlotSettings, AppProps } from './state';
 
 export const ConnectView = (props: { onClick: () => void }) => {
   return <div>
@@ -13,10 +13,7 @@ export const ConnectView = (props: { onClick: () => void }) => {
   </div>;
 }
 
-export const AppView = (props: {
-  state: PortState, table: Table, plotSettings: PlotSettings, windowChanges: number,
-  stop: () => void, restart: () => void, toggleColumn: (name: string) => void,
-}) => {
+export const AppView = (props: AppProps) => {
 
   const button = () => {
     switch (props.state.status) {
@@ -39,7 +36,7 @@ export const AppView = (props: {
     <TabView labels={["Head", "Tail", "Plot"]} defaultSelected={1} >
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
-      {table == null ? "" : <PlotView table={table}  settings={props.plotSettings} windowChanges={props.windowChanges} toggleColumn={props.toggleColumn} />}
+      {table == null ? "" : <PlotView table={table} settings={props.plotSettings} windowChanges={props.windowChanges} toggleColumn={props.toggleColumn} />}
     </TabView>
   </div>;
 }

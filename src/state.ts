@@ -28,6 +28,17 @@ export interface PlotSettings {
   selectedColumns: Set<string>;
 }
 
+export interface AppProps {
+  state: PortState;
+  table: Table;
+  plotSettings: PlotSettings;
+  windowChanges: number;
+
+  stop: () => void;
+  restart: () => void;
+  toggleColumn: (name: string) => void;
+}
+
 export class AppState extends EventTarget {
   #status = "start" as PortStatus;
 
@@ -41,6 +52,19 @@ export class AppState extends EventTarget {
 
   constructor() {
     super();
+  }
+
+  get props(): AppProps {
+    return {
+      state: this.portState,
+      table: this.table,
+      plotSettings: this.plotSettings,
+      windowChanges: this.windowChanges,
+
+      stop: this.requestClose,
+      restart: this.requestRestart,
+      toggleColumn: this.toggleColumn
+    }
   }
 
   get portState(): PortState {

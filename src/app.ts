@@ -98,17 +98,7 @@ const main = async () => {
 
   const state = new AppState();
 
-  state.addEventListener("save", () => {
-    render(AppView({
-      state: state.portState,
-      table: state.table,
-      plotSettings: state.plotSettings,
-      windowChanges: state.windowChanges,
-      stop: state.requestClose,
-      restart: state.requestRestart,
-      toggleColumn: state.toggleColumn
-    }), appElt);
-  });
+  state.addEventListener("save", () => render(AppView(state.props), appElt));
 
   const task = new PortReaderTask(port, state);
 
