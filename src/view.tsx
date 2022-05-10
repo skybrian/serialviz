@@ -1,6 +1,6 @@
 'use strict';
 
-import { h, Component, ComponentChildren, toChildArray, createRef } from 'preact';
+import { h, Component, ComponentChildren, toChildArray, createRef, Fragment } from 'preact';
 import { Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -217,9 +217,19 @@ class PlotView extends Component<PlotProps> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
-  colorAt(i: number, options?: { lit?: boolean }): string {
+  colorFor(columnName: string, options?: { lit?: boolean }): string {
     const lit = options?.lit ?? true;
-    return lit ? litColorRange.at(i) : darkColorRange.at(i);
+    for (let i = 0; i < litColorRange.length; i++) {
+      if (this.props.table.columnNames[i] == columnName) {
+        return lit ? litColorRange.at(i) : darkColorRange.at(i);
+      }
+    }
+    return "black";
+  }
+
+  get xDomain(): [number, number] {
+    const start = this.props.table.rowsRemoved;
+    return [start, start + this.props.table.rowLimit]
   }
 
   plot(parent: HTMLDivElement) {
@@ -227,8 +237,7 @@ class PlotView extends Component<PlotProps> {
 
     let width = parent.offsetWidth;
     width = !width ? 640 : width;
-
-    let height = parent.offsetHeight - 50;
+    let height = parent.offsetHeight;
 
     const columnNames = this.props.table.columnNames;
     const cols = this.props.table.columns;
@@ -238,8 +247,9 @@ class PlotView extends Component<PlotProps> {
     let marks = [];
     if (this.props.table.rowCount >= 2) { // avoid high cardinality warning in Plot.
       for (let i = 0; i < columnNames.length; i++) {
-        if (this.props.settings.selectedColumns.has(columnNames[i])) {
-          marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: this.colorAt(i) }));
+        const name = columnNames[i];
+        if (this.props.settings.selectedColumns.has(name)) {
+          marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: this.colorFor(name) }));
         }
       }
     }
@@ -249,7 +259,8 @@ class PlotView extends Component<PlotProps> {
       height: height,
       marks: marks,
       x: {
-        domain: [rowsScrolled, rowsScrolled + this.props.table.rowLimit]
+        domain: this.xDomain,
+        axis: "top"
       },
       y: {
         nice: true,
@@ -272,23 +283,101 @@ class PlotView extends Component<PlotProps> {
     this.plot(this.plotElt.current);
   }
 
-  makeToggleButton = (name: string, i: number) => {
+  makeToggleButton = (name: string) => {
     const lit = this.props.settings.selectedColumns.has(name);
     return <div class="swatch-button">
       <span class={"swatch" + (lit ? " swatch-lit" : "")}
-        style={`background-color: ${this.colorAt(i, { lit: lit })}`}> </span>
+        style={`background-color: ${this.colorFor(name, { lit: lit })}`}> </span>
       <button class="pure-button"
         onClick={() => this.props.toggleColumn(name)}
       >{name}</button>
     </div>
   };
 
+  unselectedColumns(): [string, Float64Array][] {
+    const selected = this.props.settings.selectedColumns;
+
+    const result = [];
+    for (let i = 0; i < this.props.table.columnNames.length; i++) {
+      const name = this.props.table.columnNames[i];
+      if (!selected.has(name)) {
+        const column = this.props.table.columns[i];
+        result.push([name, column]);
+      }
+    }
+    return result;
+  }
+
   render() {
     return <div class="plot-view">
-      <div class="plot-left" role="group">
-        {this.props.table.columnNames.map((name, i) => this.makeToggleButton(name, i))}
+      <div class="plot-main-buttons" role="group">
+        {this.props.table.columnNames.map((name) => this.makeToggleButton(name))}
       </div>
-      <div class="plot-right" ref={this.plotElt} />
+      <div class="plot-main" ref={this.plotElt} />
+      {this.unselectedColumns().map(([name, data]) =>
+        <UnselectedPlotView
+          columnName={name}
+          indexes={this.props.table.indexes}
+          data={data}
+          color={this.colorFor(name)}
+          xDomain={this.xDomain}
+          />)}
     </div>;
+  }
+
+  renderUnselectedColumn(name: string) {
+
+    return <>
+      <div class="plot-unselected-label">${name}</div>
+    </>
+  }
+}
+
+class UnselectedPlotView extends Component<{columnName: string, indexes: Float64Array, data: Float64Array, color: string, xDomain: [number, number]}> {
+  plotElt = createRef<HTMLDivElement>();
+  lastIndex = null;
+
+  plot(parent: HTMLDivElement) {
+    parent.textContent = "";
+
+    let width = parent.offsetWidth;
+    width = !width ? 640 : width;
+    let height = parent.offsetHeight;
+
+    let marks = [];
+    if (this.props.indexes.length >= 2) { // avoid high cardinality warning in Plot.
+      marks.push(Plot.lineY(this.props.data, { x: this.props.indexes, stroke: this.props.color }));
+    }
+
+    parent.appendChild(Plot.plot({
+      width: width,
+      height: height,
+      marks: marks,
+      x: {
+        domain: this.props.xDomain,
+        axis: null,
+      },
+      y: {
+        nice: true,
+        zero: false,
+      }
+    }));
+  }
+
+
+  componentDidUpdate() {
+    this.plot(this.plotElt.current);
+  }
+
+  render() {
+    return <>
+      <div class="unselected-plot-label" key={"label-" + this.props.columnName}>
+        <div>{this.props.columnName}</div>
+      </div>
+      <div class="unselected-plot-view"
+        key={"plot-" + this.props.columnName}
+        ref={this.plotElt}>
+      </div>
+    </>
   }
 }
