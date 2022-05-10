@@ -9,9 +9,11 @@ import { ConnectView, AppView } from './view';
 const choosePort = (elt: Element): Promise<SerialPort> => {
   return new Promise((resolve) => {
 
+    const serial = navigator.serial;
+
     const choose = async () => {
       try {
-        const port = await navigator.serial.requestPort();
+        const port = await serial.requestPort();
         const info = port.getInfo();
         console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
         resolve(port);
@@ -20,7 +22,7 @@ const choosePort = (elt: Element): Promise<SerialPort> => {
       }
     }
 
-    render(ConnectView({ onClick: choose }), elt);
+    render(ConnectView({ haveSerial: Boolean(serial), onClick: choose }), elt);
   });
 }
 

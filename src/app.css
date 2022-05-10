@@ -23,6 +23,14 @@ body {
     flex-direction: column;
 }
 
+.connect-view {
+    font-size: 120%;
+}
+
+.connect-button {
+    margin-top: 20px;
+}
+
 .port-view {
     flex-grow: 1;
     height: 50%;

@@ -7,9 +7,23 @@ import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
 import { LogLine, PlotSettings, AppProps } from './state';
 
-export const ConnectView = (props: { onClick: () => void }) => {
-  return <div>
-    <button id="connect" onClick={props.onClick} class="pure-button pure-button-primary">Connect</button>
+export const ConnectView = (props: { haveSerial: boolean, onClick: () => void }) => {
+  const aboutMessage = <p>
+    This app plots CSV data from a device that logs to a serial port on your computer. Useful for Arduino. (More on <a href="https://github.com/skybrian/serialviz">GitHub</a>)
+  </p>
+
+  const noSerialMessage =
+    <p>
+      ⚠️ Sorry, you won't be able to connect to the serial port with this browser, because it doesn't support the Web Serial API.
+      (See <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API#browser_compatibility">compatible browsers</a>.)
+    </p>
+
+  return <div class="connect-view">
+    <div class="message-box">
+    {aboutMessage}
+    {props.haveSerial ? "" : noSerialMessage}
+    </div>
+    <button disabled={!props.haveSerial} onClick={props.onClick} class="connect-button pure-button pure-button-primary">Connect to Serial Port</button>
   </div>;
 }
 
