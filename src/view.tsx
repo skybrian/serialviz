@@ -206,6 +206,8 @@ const darkColorRange = [
   "#0d6f79"
 ];
 
+const maxUnselectedViews = 4;
+
 interface PlotProps {
   table: Table;
   settings: PlotSettings;
@@ -300,7 +302,7 @@ class PlotView extends Component<PlotProps> {
     const result = [];
     for (let i = 0; i < this.props.table.columnNames.length; i++) {
       const name = this.props.table.columnNames[i];
-      if (!selected.has(name)) {
+      if (!selected.has(name) && result.length < maxUnselectedViews) {
         const column = this.props.table.columns[i];
         result.push([name, column]);
       }
@@ -363,7 +365,6 @@ class UnselectedPlotView extends Component<{columnName: string, indexes: Float64
       }
     }));
   }
-
 
   componentDidUpdate() {
     this.plot(this.plotElt.current);
