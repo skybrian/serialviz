@@ -2,41 +2,39 @@
 
 import { render } from 'preact';
 
-import { SerialPortDevice } from './device';
+import { Device, FunctionGenerator, SerialPortDevice } from './device';
 import { AppState } from './state';
 import { ConnectView, AppView } from './view';
 
-const choosePort = (elt: Element): Promise<SerialPort> => {
-  return new Promise((resolve) => {
-
-    const serial = navigator.serial;
-
-    const choose = async () => {
-      try {
-        const port = await serial.requestPort();
-        const info = port.getInfo();
-        console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
-        resolve(port);
-      } catch (e) {
-        console.log(e);
-      }
-    }
-
-    render(ConnectView({ haveSerial: Boolean(serial), onClick: choose }), elt);
-  });
-}
-
-
-const main = async () => {
+const main = () => {
   const appElt = document.getElementById("app") as HTMLDivElement;
-
-  const port = await choosePort(appElt);
-
+  const serial = navigator.serial;
   const state = new AppState();
 
-  state.addEventListener("save", () => render(AppView(state.props), appElt));
+  const choose = async () => {
+    try {
+      const port = await serial.requestPort();
+      const info = port.getInfo();
+      console.log(`Connecting to ${info.usbVendorId} ${info.usbProductId}`);
 
-  const task = new SerialPortDevice(port, state);
+      const device = new SerialPortDevice(port, state);
+      startApp(state, device, appElt);
+    } catch (e) {
+      console.log(e);
+    }
+  }
+
+  const generate = () => {
+    const device = new FunctionGenerator(state);
+    startApp(state, device, appElt);
+
+  }
+
+  render(ConnectView({ haveSerial: Boolean(serial), onClickSerial: choose, onClickGenerator: generate }), appElt);
+}
+
+const startApp = (state: AppState, device: Device, appElt: Element): void => {
+  state.addEventListener("save", () => render(AppView(state.props), appElt));
 
   const connectUnlessCancelled = async () => {
     // Tell other windows to close the serial port.
@@ -48,7 +46,7 @@ const main = async () => {
     await new Promise(resolve => setTimeout(resolve, 100));
 
     if (state.status == "connecting") {
-      task.connect();
+      device.start();
     } else {
       console.log("connect cancelled");
     }
@@ -67,13 +65,13 @@ const main = async () => {
         connectUnlessCancelled();
         break;
       case "closing":
-        task.cancel();
+        device.stop();
         break;
     }
   });
 
   let timeoutID = null as number;
-  window.addEventListener("resize", function() {
+  window.addEventListener("resize", function () {
     window.clearTimeout(timeoutID);
     timeoutID = window.setTimeout(() => { state.windowChanged() }, 250);
   })

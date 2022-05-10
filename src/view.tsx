@@ -7,11 +7,13 @@ import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
 import { LogLine, PlotSettings, AppProps } from './state';
 
-export const ConnectView = (props: { haveSerial: boolean, onClick: () => void }) => {
-  const aboutMessage = <p>
-    This app plots CSV data from a device that logs to a serial port on your computer. Useful for Arduino. (More on <a href="https://github.com/skybrian/serialviz">GitHub.</a>)
-  </p>
+interface ConnectProps {
+  haveSerial: boolean;
+  onClickSerial: () => void;
+  onClickGenerator: () => void;
+}
 
+export const ConnectView = (props: ConnectProps) => {
   const noSerialMessage =
     <p>
       ⚠️ Sorry, you won't be able to connect to the serial port with this browser, because it doesn't support the Web Serial API.
@@ -20,10 +22,17 @@ export const ConnectView = (props: { haveSerial: boolean, onClick: () => void })
 
   return <div class="connect-view">
     <div class="message-box">
-    {aboutMessage}
-    {props.haveSerial ? "" : noSerialMessage}
+      <p> This app plots CSV data from a device that logs to a serial port on your computer. Useful for Arduino.
+        (More on <a href="https://github.com/skybrian/serialviz">GitHub.</a>)</p>
+      {props.haveSerial ? "" : noSerialMessage}
     </div>
-    <button disabled={!props.haveSerial} onClick={props.onClick} class="connect-button pure-button pure-button-primary">Connect to Serial Port</button>
+    <button disabled={!props.haveSerial}
+      onClick={props.onClickSerial}
+      class="connect-button pure-button pure-button-primary">Connect to Serial Port</button>
+    <div class="message-box">
+      <p>If you don't have a serial device to connect to, you can still try out SerialViz using this fake device:</p>
+    </div>
+    <button onClick={props.onClickGenerator} class="connect-button">Start Function Generator</button>
   </div>;
 }
 
@@ -208,7 +217,7 @@ class PlotView extends Component<PlotProps> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
-  colorAt(i: number, options?: {lit?: boolean}): string {
+  colorAt(i: number, options?: { lit?: boolean }): string {
     const lit = options?.lit ?? true;
     return lit ? litColorRange.at(i) : darkColorRange.at(i);
   }
@@ -267,10 +276,10 @@ class PlotView extends Component<PlotProps> {
     const makeToggleButton = (name: string, i: number) => {
       const lit = this.props.settings.selectedColumns.has(name);
       return <div class="swatch-button">
-        <span class="swatch" style={`background-color: ${this.colorAt(i, {lit: lit})}`}> </span>
+        <span class="swatch" style={`background-color: ${this.colorAt(i, { lit: lit })}`}> </span>
         <button class={"pure-button" + (lit ? " xbutton-pressed" : "")}
-        onClick={() => this.props.toggleColumn(name)}
-      >{name}</button>
+          onClick={() => this.props.toggleColumn(name)}
+        >{name}</button>
       </div>
     };
     return <div class="plot-view">
