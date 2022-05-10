@@ -9,7 +9,7 @@ import { LogLine, PlotSettings, AppProps } from './state';
 
 export const ConnectView = (props: { haveSerial: boolean, onClick: () => void }) => {
   const aboutMessage = <p>
-    This app plots CSV data from a device that logs to a serial port on your computer. Useful for Arduino. (More on <a href="https://github.com/skybrian/serialviz">GitHub</a>)
+    This app plots CSV data from a device that logs to a serial port on your computer. Useful for Arduino. (More on <a href="https://github.com/skybrian/serialviz">GitHub.</a>)
   </p>
 
   const noSerialMessage =

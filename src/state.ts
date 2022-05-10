@@ -1,6 +1,6 @@
 'use strict';
 
-import { TableBuffer, Table, Row } from './csv';
+import { TableBuffer, Table, Row, parseRow } from './csv';
 
 const logHeadLimit = 100;
 const logTailLimit = 100;
@@ -39,7 +39,14 @@ export interface AppProps {
   toggleColumn: (name: string) => void;
 }
 
-export class AppState extends EventTarget {
+export interface DeviceOutput {
+  deviceOpened(): boolean;
+  deviceClosed(): void;
+  deviceCrashed(message: any): void;
+  pushDeviceOutput(line: string): void;
+}
+
+export class AppState extends EventTarget implements DeviceOutput {
   #status = "start" as PortStatus;
 
   #log = { key: 0, head: [], tail: [] } as Log;
@@ -54,12 +61,14 @@ export class AppState extends EventTarget {
     super();
   }
 
+  // getters
+
   get props(): AppProps {
     return {
-      state: this.portState,
-      table: this.table,
-      plotSettings: this.plotSettings,
-      windowChanges: this.windowChanges,
+      state: { status: this.#status, log: this.#log },
+      table: this.#rows.table,
+      plotSettings: this.#plotSettings,
+      windowChanges: this.#windowChanges,
 
       stop: this.requestClose,
       restart: this.requestRestart,
@@ -67,28 +76,8 @@ export class AppState extends EventTarget {
     }
   }
 
-  get portState(): PortState {
-    return { status: this.#status, log: this.log };
-  }
-
   get status() {
     return this.#status;
-  }
-
-  get log(): Log {
-    return this.#log;
-  }
-
-  get table(): Table {
-    return this.#rows.table;
-  }
-
-  get plotSettings(): PlotSettings {
-    return this.#plotSettings;
-  }
-
-  get windowChanges(): number {
-    return this.#windowChanges;
   }
 
   canChangeTo(request: PortStatus): boolean {
@@ -109,9 +98,45 @@ export class AppState extends EventTarget {
     return false;
   }
 
+  // device actions
+
+  deviceOpened = (): boolean => this.requestChange("reading");
+
+  deviceClosed(): void {
+    this.requestChange("closed", { message: "Closed" });
+  }
+
+  deviceCrashed(message: any): void {
+    this.requestChange("portGone", { message: message });
+  }
+
+  pushDeviceOutput(line: string): void {
+    this.#pushLog(line);
+    const row = parseRow(line);
+    if (row) {
+      this.#pushRow(row);
+    }
+    this.#save();
+  }
+
+  // other actions
+
   pushLog(line: string): void {
     this.#pushLog(line);
     this.#save();
+  }
+
+  #pushRow(row: Row): void {
+    const tableKey = this.#rows.table?.key;
+
+    this.#rows.push(row);
+
+    if (tableKey != this.#rows.table?.key && this.#plotSettings.selectedColumns.size == 0) {
+      const firstColumn = this.#rows.table.columnNames.at(0);
+      if (firstColumn) {
+        this.toggleColumn(firstColumn);
+      }
+    }
   }
 
   #pushLog(line: string): void {
@@ -132,6 +157,8 @@ export class AppState extends EventTarget {
     this.#log = { key: this.#log.key, head: head, tail: tail };
     this.#linesAdded++;
   }
+
+  // other actions
 
   requestClose = (): boolean => this.requestChange("closed", { optional: true }) || this.requestChange("closing");
 
@@ -161,19 +188,6 @@ export class AppState extends EventTarget {
     return true;
   }
 
-  pushRow(row: Row): void {
-    const tableKey = this.#rows.table?.key;
-
-    this.#rows.push(row);
-
-    if (tableKey != this.#rows.table?.key && this.#plotSettings.selectedColumns.size == 0) {
-      const firstColumn = this.#rows.table.columnNames.at(0);
-      if (firstColumn) {
-        this.toggleColumn(firstColumn);
-      }
-    }
-  }
-
   toggleColumn = (name: string): void => {
     const cols = new Set(this.#plotSettings.selectedColumns);
     if (cols.has(name)) {
@@ -183,10 +197,6 @@ export class AppState extends EventTarget {
     }
     this.#plotSettings = {...this.#plotSettings, selectedColumns: cols };
     this.#save();
-  }
-
-  fatal(message: any): void {
-    this.requestChange("portGone", { message: message });
   }
 
   windowChanged(): void {
