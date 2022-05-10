@@ -32,10 +32,6 @@ body {
     margin-bottom: 20px;
 }
 
-.generator-button {
-
-}
-
 .port-view {
     flex-grow: 1;
     height: 50%;
@@ -92,13 +88,23 @@ body {
 
 .swatch {
     display: inline-block;
-    width: 24px;
-    height: 24px;
     vertical-align: middle;
-    margin-right: 6px;
+
+    width: 8px;
+    height: 8px;
+    margin-left: 8px;
+    margin-right: 8px;
 }
 
-.swatch button {
+.swatch-lit {
+    width: 24px;
+    height: 24px;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.swatch-button button {
+    margin-left: 6px;
     font-size: 80%;
 }
 

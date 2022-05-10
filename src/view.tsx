@@ -272,19 +272,21 @@ class PlotView extends Component<PlotProps> {
     this.plot(this.plotElt.current);
   }
 
+  makeToggleButton = (name: string, i: number) => {
+    const lit = this.props.settings.selectedColumns.has(name);
+    return <div class="swatch-button">
+      <span class={"swatch" + (lit ? " swatch-lit" : "")}
+        style={`background-color: ${this.colorAt(i, { lit: lit })}`}> </span>
+      <button class="pure-button"
+        onClick={() => this.props.toggleColumn(name)}
+      >{name}</button>
+    </div>
+  };
+
   render() {
-    const makeToggleButton = (name: string, i: number) => {
-      const lit = this.props.settings.selectedColumns.has(name);
-      return <div class="swatch-button">
-        <span class="swatch" style={`background-color: ${this.colorAt(i, { lit: lit })}`}> </span>
-        <button class={"pure-button" + (lit ? " xbutton-pressed" : "")}
-          onClick={() => this.props.toggleColumn(name)}
-        >{name}</button>
-      </div>
-    };
     return <div class="plot-view">
       <div class="plot-left" role="group">
-        {this.props.table.columnNames.map((name, i) => makeToggleButton(name, i))}
+        {this.props.table.columnNames.map((name, i) => this.makeToggleButton(name, i))}
       </div>
       <div class="plot-right" ref={this.plotElt} />
     </div>;
