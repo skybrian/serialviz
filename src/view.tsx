@@ -28,11 +28,11 @@ export const ConnectView = (props: ConnectProps) => {
     </div>
     <button disabled={!props.haveSerial}
       onClick={props.onClickSerial}
-      class="connect-button pure-button pure-button-primary">Connect to Serial Port</button>
+      class="pure-button pure-button-primary">Connect to Serial Port</button>
     <div class="message-box">
-      <p>If you don't have a serial device to connect to, you can still try out SerialViz using this fake device:</p>
+      <p>{props.haveSerial ? "Or if you don't have a serial device to connect to, you" : "You"} can still try out SerialViz using a fake device:</p>
     </div>
-    <button onClick={props.onClickGenerator} class="connect-button">Start Function Generator</button>
+    <button onClick={props.onClickGenerator} class={"pure-button " + (props.haveSerial ? "" : "pure-button-primary")}>Start Function Generator</button>
   </div>;
 }
 
