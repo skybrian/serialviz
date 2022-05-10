@@ -287,8 +287,9 @@ class PlotView extends Component<PlotProps> {
 
   makeToggleButton = (name: string) => {
     const lit = this.props.settings.selectedColumns.has(name);
+    const bottom = this.bottomColumns().map((c) => c[0]).includes(name);
     return <div class="swatch-button">
-      <span class={"swatch" + (lit ? " swatch-lit" : "")}
+      <span class={"swatch" + (lit ? " swatch-lit" : (bottom ? " swatch-bottom" : ""))}
         style={`background-color: ${this.colorFor(name, { lit: lit })}`}> </span>
       <button class="pure-button"
         onClick={() => this.props.toggleColumn(name)}
@@ -296,7 +297,7 @@ class PlotView extends Component<PlotProps> {
     </div>
   };
 
-  unselectedColumns(): [string, Float64Array][] {
+  bottomColumns(): [string, Float64Array][] {
     const selected = this.props.settings.selectedColumns;
 
     const result = [];
@@ -316,8 +317,8 @@ class PlotView extends Component<PlotProps> {
         {this.props.table.columnNames.map((name) => this.makeToggleButton(name))}
       </div>
       <div class="plot-main" ref={this.plotElt} />
-      {this.unselectedColumns().map(([name, data]) =>
-        <UnselectedPlotView
+      {this.bottomColumns().map(([name, data]) =>
+        <BottomPlotView
           columnName={name}
           indexes={this.props.table.indexes}
           data={data}
@@ -335,7 +336,7 @@ class PlotView extends Component<PlotProps> {
   }
 }
 
-class UnselectedPlotView extends Component<{columnName: string, indexes: Float64Array, data: Float64Array, color: string, xDomain: [number, number]}> {
+class BottomPlotView extends Component<{columnName: string, indexes: Float64Array, data: Float64Array, color: string, xDomain: [number, number]}> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
@@ -372,10 +373,10 @@ class UnselectedPlotView extends Component<{columnName: string, indexes: Float64
 
   render() {
     return <>
-      <div class="unselected-plot-label" key={"label-" + this.props.columnName}>
+      <div class="bottom-plot-label" key={"label-" + this.props.columnName}>
         <div>{this.props.columnName}</div>
       </div>
-      <div class="unselected-plot-view"
+      <div class="bottom-plot-view"
         key={"plot-" + this.props.columnName}
         ref={this.plotElt}>
       </div>
