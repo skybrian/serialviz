@@ -5,7 +5,7 @@ import { ColumnSlice, Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { LogLine, PlotSettings, AppProps } from './state';
+import { LogLine, PlotSettings, AppProps, livePlotLimit } from './state';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -229,8 +229,9 @@ class PlotView extends Component<PlotProps> {
   }
 
   get xDomain(): [number, number] {
-    const start = this.props.table.rowsRemoved;
-    return [start, start + this.props.table.rowLimit]
+    const r = this.props.table.range;
+    const start = Math.max(0, r.end - livePlotLimit);
+    return [start,  start + livePlotLimit];
   }
 
   plot(parent: HTMLDivElement) {
@@ -240,15 +241,14 @@ class PlotView extends Component<PlotProps> {
     width = !width ? 640 : width;
     let height = parent.offsetHeight;
 
-    const columnNames = this.props.table.columnNames;
-    const cols = this.props.table.columns;
-    const rowsScrolled = this.props.table.rowsRemoved;
+    const table = this.props.table;
+    const rowsScrolled = this.xDomain[0];
 
     let marks = [];
-    if (this.props.table.rowCount >= 2) { // avoid high cardinality warning in Plot.
-      for (let col of cols) {
+    if (table.range.length >= 2) { // avoid high cardinality warning in Plot.
+      for (let col of table.columns) {
         if (this.props.settings.selectedColumns.has(col.name)) {
-          const start = col.range[0]
+          const start = col.range.start;
           marks.push(Plot.lineY(col.values, { x: (_, i) => i + start, stroke: this.colorFor(col.name) }));
         }
       }
@@ -274,9 +274,7 @@ class PlotView extends Component<PlotProps> {
   }
 
   shouldComponentUpdate(next: PlotProps): boolean {
-    return (!document.hidden &&
-      (this.props.table.rowCount != next.table.rowCount ||
-        this.props.table.rowsRemoved != next.table.rowsRemoved)) ||
+    return !document.hidden && !this.props.table.range.equals(next.table.range) ||
       this.props.windowChanges != next.windowChanges ||
       this.props.settings != next.settings;
   }
@@ -339,7 +337,7 @@ class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, 
     const marks = [];
     const col = this.props.column;
     if (col.values.length >= 2) { // avoid high cardinality warning in Plot.
-      const start = col.range[0]
+      const start = col.range.start;
       marks.push(Plot.lineY(col.values, { x: (_, i) => i + start, stroke: this.props.color }));
     }
 

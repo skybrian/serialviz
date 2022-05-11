@@ -153,27 +153,45 @@ export function parseRow(input: string): Row | null {
   return { kind: "data", values: values };
 }
 
+export const range = (start: number, end: number) => new Range(start, end);
+
+export class Range {
+  constructor(readonly start: number, readonly end: number) {
+    if (end < start) throw `invalid range: [${start}, ${end}]`;
+  }
+
+  get length() { return this.end - this.start; }
+
+  equals(b: Range): boolean {
+    return this.start == b.start && this.end == b.end;
+  }
+
+  *[Symbol.iterator]() {
+    for (let i = this.start; i < this.end; i++) {
+      yield i;
+    }
+  }
+}
+
 export interface Table {
   key: number;
   columnNames: string[];
-  rowCount: number;
-  rowLimit: number;
-  rowsRemoved: number;
+  range: Range;
   columns: ColumnSlice[];
 }
 
 export interface ColumnSlice {
   key: string;
   name: string;
-  range: [number, number]; // min <= i < max
+  range: Range;
   values: Float64Array;
 }
 
 export class TableBuffer {
   #tablesSeen = 0;
   #columnNames = null as string[];
-  #rowCount = 0;
-  #rowsRemoved = 0;
+  #rowStart = 0;
+  #rowEnd = 0;
   #columns = null as Float64Array[];
 
   constructor(readonly rowLimit: number) { }
@@ -181,23 +199,23 @@ export class TableBuffer {
   get table(): Table | null {
     if (this.#columnNames == null) return null;
 
+    const rowRange = range(this.#rowStart, this.#rowEnd)
+
     const columns = new Array<ColumnSlice>(this.#columnNames.length);
     for (let i = 0; i < columns.length; i++) {
       const name = this.#columnNames[i];
       columns[i] = {
         key: `${this.#tablesSeen}-${name}`,
         name: name,
-        range: [this.#rowsRemoved, this.#rowsRemoved + this.#rowCount],
-        values: this.#columns[i].slice(0, this.#rowCount)
+        range: rowRange,
+        values: this.#columns[i].slice(0, this.#rowEnd)
       };
     }
 
     return {
       key: this.#tablesSeen,
       columnNames: this.#columnNames,
-      rowCount: this.#rowCount,
-      rowLimit: this.rowLimit,
-      rowsRemoved: this.#rowsRemoved,
+      range: rowRange,
       columns: columns,
     };
   }
@@ -207,8 +225,8 @@ export class TableBuffer {
   clear() {
     this.#tablesSeen = 0;
     this.#columnNames = null;
-    this.#rowCount = 0;
-    this.#rowsRemoved = 0;
+    this.#rowStart = 0;
+    this.#rowEnd = 0;
     this.#columns = null;
   }
 
@@ -222,16 +240,15 @@ export class TableBuffer {
           const columnNames = new Array(row.values.length).fill(0).map((_, i) => `Column ${i + 1}`);
           this.#startTable(columnNames);
         }
-        this.#rowCount++;
-        if (this.#rowCount > this.rowLimit) {
+        this.#rowEnd++;
+        if (this.#rowEnd > this.rowLimit) {
           // Scroll data to left.
           for (let col of this.#columns) {
             col.copyWithin(0, 1);
           }
-          this.#rowsRemoved++;
-          this.#rowCount = this.rowLimit;
+          this.#rowStart++;
         }
-        let y = this.#rowCount - 1;
+        let y = this.#rowEnd - this.#rowStart - 1;
         for (let i = 0; i < this.#columns.length; i++) {
           this.#columns[i][y] = row.values.at(i);
         }
@@ -245,8 +262,8 @@ export class TableBuffer {
   #startTable(columnNames: string[]) {
     this.#tablesSeen++;
     this.#columnNames = columnNames;
-    this.#rowCount = 0;
-    this.#rowsRemoved = 0;
+    this.#rowStart = 0;
+    this.#rowEnd = 0;
     this.#columns = Array(columnNames.length);
     for (let i = 0; i < columnNames.length; i++) {
       this.#columns[i] = new Float64Array(this.rowLimit);

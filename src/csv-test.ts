@@ -4,7 +4,7 @@ import test, { ExecutionContext } from 'ava';
 import { testProp, fc } from 'ava-fast-check';
 import { csvParseRows, csvFormatRow } from 'd3-dsv';
 
-import { decodeStream, findLines, parseFields, parseNumber, parseRow, TableBuffer } from './csv.js';
+import { decodeStream, findLines, parseFields, parseNumber, parseRow, range, TableBuffer } from './csv.js';
 
 fc.configureGlobal({ numRuns: 1000 })
 
@@ -230,6 +230,37 @@ testProp('parseRow should parse rows with a non-number as a header, or reject', 
   }
 });
 
+testProp('Iterating over a range should return the values in that range', [fc.nat(), fc.nat()], (t, start, len) => {
+  const end = start + len;
+  const r = range(start, end);
+  t.is(r.length, len);
+  let expectedI = start;
+  for (let i of r) {
+    t.is(i, expectedI);
+    expectedI++;
+    if (expectedI - start > 1000) {
+      break; // just check the beginning.
+    }
+  }
+  if (len < 1000) {
+    t.is(expectedI, end);
+  }
+});
+
+testProp('Different ranges should compare equal if constructed with the same values',
+  [fc.nat(), fc.nat()], (t, aStart, aLen) => {
+    const a = range(aStart, aStart + aLen);
+    const a2 = range(aStart, aStart + aLen);
+    t.is(a.equals(a2), true);
+});
+
+testProp('Ranges should compare nonequal when they contain different values',
+  [fc.nat(), fc.nat(), fc.nat(), fc.nat()], (t, aStart, aLen, bStart, bLen) => {
+    const a = range(aStart, aStart + aLen);
+    const b = range(bStart, bStart + bLen);
+    t.is(a.equals(b), aStart == bStart && aLen == bLen);
+});
+
 testProp('TableBuffer should preserve the last data rows added to the current table', [fc.nat(), fc.array(fc.boolean())], (t, limit, rowTypes) => {
 
   const buf = new TableBuffer(limit);
@@ -255,21 +286,20 @@ testProp('TableBuffer should preserve the last data rows added to the current ta
     const table = buf.table;
     t.is(table.key, tablesAdded);
     t.deepEqual(table.columnNames, [columnName], `should have column named "${columnName}"`);
-    t.is(table.rowCount, rowsAdded > limit ? limit : rowsAdded);
-    t.is(table.rowsRemoved, rowsAdded > limit ? rowsAdded - limit : 0);
+
+    const rowStart = rowsAdded > limit ? rowsAdded - limit : 0;
+    t.is(table.range.start, rowStart);
+    t.is(table.range.end, rowsAdded);
     t.is(table.columns.length, 1);
 
     const col = table.columns[0];
     t.is(col.key, `${tablesAdded}-${columnName}`);
     t.is(col.name, columnName);
 
-    const rangeStart = rowsAdded > limit ? rowsAdded - limit : 0;
-    const len = rowsAdded > limit ? limit : rowsAdded
-
-    t.deepEqual(col.range, [rangeStart, rangeStart + len]);
-    t.is(col.values.length, len);
-    for (let i = 0; i < len; i++) {
-      t.is(col.values[i], i + rangeStart);
+    t.deepEqual(col.range, range(rowStart, rowsAdded));
+    t.is(col.values.length, rowsAdded - rowStart);
+    for (let i = 0; i < rowsAdded - rowStart; i++) {
+      t.is(col.values[i], i + rowStart);
     }
   }
   return true;

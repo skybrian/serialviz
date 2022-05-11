@@ -5,6 +5,11 @@ import { TableBuffer, Table, Row, parseRow } from './csv';
 const logHeadLimit = 100;
 const logTailLimit = 100;
 const tableBufferLimit = 500;
+export const livePlotLimit = 500;
+
+if (livePlotLimit > tableBufferLimit) {
+  throw "can't plot more rows than in buffer";
+}
 
 type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
 
