@@ -258,10 +258,18 @@ testProp('TableBuffer should preserve the last data rows added to the current ta
     t.is(table.rowCount, rowsAdded > limit ? limit : rowsAdded);
     t.is(table.rowsRemoved, rowsAdded > limit ? rowsAdded - limit : 0);
     t.is(table.columns.length, 1);
+
     const col = table.columns[0];
-    t.is(col.length, rowsAdded > limit ? limit : rowsAdded);
-    for (let i = 0; i < col.length; i++) {
-      t.is(col[i], table.rowsRemoved + i);
+    t.is(col.key, `${tablesAdded}-${columnName}`);
+    t.is(col.name, columnName);
+
+    const rangeStart = rowsAdded > limit ? rowsAdded - limit : 0;
+    const len = rowsAdded > limit ? limit : rowsAdded
+
+    t.deepEqual(col.range, [rangeStart, rangeStart + len]);
+    t.is(col.values.length, len);
+    for (let i = 0; i < len; i++) {
+      t.is(col.values[i], i + rangeStart);
     }
   }
   return true;

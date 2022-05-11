@@ -1,7 +1,7 @@
 'use strict';
 
 import { h, Component, ComponentChildren, toChildArray, createRef, Fragment } from 'preact';
-import { Table } from './csv';
+import { ColumnSlice, Table } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
@@ -217,7 +217,6 @@ interface PlotProps {
 
 class PlotView extends Component<PlotProps> {
   plotElt = createRef<HTMLDivElement>();
-  lastIndex = null;
 
   colorFor(columnName: string, options?: { lit?: boolean }): string {
     const lit = options?.lit ?? true;
@@ -244,14 +243,13 @@ class PlotView extends Component<PlotProps> {
     const columnNames = this.props.table.columnNames;
     const cols = this.props.table.columns;
     const rowsScrolled = this.props.table.rowsRemoved;
-    this.lastIndex = this.props.table.indexes.at(-1);
 
     let marks = [];
     if (this.props.table.rowCount >= 2) { // avoid high cardinality warning in Plot.
-      for (let i = 0; i < columnNames.length; i++) {
-        const name = columnNames[i];
-        if (this.props.settings.selectedColumns.has(name)) {
-          marks.push(Plot.lineY(cols[i], { x: this.props.table.indexes, stroke: this.colorFor(name) }));
+      for (let col of cols) {
+        if (this.props.settings.selectedColumns.has(col.name)) {
+          const start = col.range[0]
+          marks.push(Plot.lineY(col.values, { x: (_, i) => i + start, stroke: this.colorFor(col.name) }));
         }
       }
     }
@@ -275,10 +273,12 @@ class PlotView extends Component<PlotProps> {
     this.plot(this.plotElt.current);
   }
 
-  shouldComponentUpdate(nextProps: PlotProps): boolean {
-    return (!document.hidden && this.lastIndex != nextProps.table.indexes.at(-1)) ||
-      this.props.windowChanges != nextProps.windowChanges ||
-      this.props.settings != nextProps.settings;
+  shouldComponentUpdate(next: PlotProps): boolean {
+    return (!document.hidden &&
+      (this.props.table.rowCount != next.table.rowCount ||
+        this.props.table.rowsRemoved != next.table.rowsRemoved)) ||
+      this.props.windowChanges != next.windowChanges ||
+      this.props.settings != next.settings;
   }
 
   componentDidUpdate() {
@@ -287,7 +287,7 @@ class PlotView extends Component<PlotProps> {
 
   makeToggleButton = (name: string) => {
     const lit = this.props.settings.selectedColumns.has(name);
-    const bottom = this.bottomColumns().map((c) => c[0]).includes(name);
+    const bottom = this.bottomColumns().map((c) => c.name).includes(name);
     return <div class="swatch-button">
       <span class={"swatch" + (lit ? " swatch-lit" : (bottom ? " swatch-bottom" : ""))}
         style={`background-color: ${this.colorFor(name, { lit: lit })}`}> </span>
@@ -297,18 +297,9 @@ class PlotView extends Component<PlotProps> {
     </div>
   };
 
-  bottomColumns(): [string, Float64Array][] {
+  bottomColumns(): ColumnSlice[] {
     const selected = this.props.settings.selectedColumns;
-
-    const result = [];
-    for (let i = 0; i < this.props.table.columnNames.length; i++) {
-      const name = this.props.table.columnNames[i];
-      if (!selected.has(name) && result.length < maxUnselectedViews) {
-        const column = this.props.table.columns[i];
-        result.push([name, column]);
-      }
-    }
-    return result;
+    return this.props.table.columns.filter((c) => !selected.has(c.name)).slice(0, 4);
   }
 
   render() {
@@ -317,14 +308,12 @@ class PlotView extends Component<PlotProps> {
         {this.props.table.columnNames.map((name) => this.makeToggleButton(name))}
       </div>
       <div class="plot-main" ref={this.plotElt} />
-      {this.bottomColumns().map(([name, data]) =>
+      {this.bottomColumns().map((col) =>
         <BottomPlotView
-          columnName={name}
-          indexes={this.props.table.indexes}
-          data={data}
-          color={this.colorFor(name)}
+          column={col}
           xDomain={this.xDomain}
-          />)}
+          color={this.colorFor(col.name)}
+        />)}
     </div>;
   }
 
@@ -336,7 +325,7 @@ class PlotView extends Component<PlotProps> {
   }
 }
 
-class BottomPlotView extends Component<{columnName: string, indexes: Float64Array, data: Float64Array, color: string, xDomain: [number, number]}> {
+class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, number], color: string }> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
@@ -345,11 +334,13 @@ class BottomPlotView extends Component<{columnName: string, indexes: Float64Arra
 
     let width = parent.offsetWidth;
     width = !width ? 640 : width;
-    let height = parent.offsetHeight;
+    const height = parent.offsetHeight;
 
-    let marks = [];
-    if (this.props.indexes.length >= 2) { // avoid high cardinality warning in Plot.
-      marks.push(Plot.lineY(this.props.data, { x: this.props.indexes, stroke: this.props.color }));
+    const marks = [];
+    const col = this.props.column;
+    if (col.values.length >= 2) { // avoid high cardinality warning in Plot.
+      const start = col.range[0]
+      marks.push(Plot.lineY(col.values, { x: (_, i) => i + start, stroke: this.props.color }));
     }
 
     parent.appendChild(Plot.plot({
@@ -373,11 +364,11 @@ class BottomPlotView extends Component<{columnName: string, indexes: Float64Arra
 
   render() {
     return <>
-      <div class="bottom-plot-label" key={"label-" + this.props.columnName}>
-        <div>{this.props.columnName}</div>
+      <div class="bottom-plot-label" key={"label-" + this.props.column.name}>
+        <div>{this.props.column.name}</div>
       </div>
       <div class="bottom-plot-view"
-        key={"plot-" + this.props.columnName}
+        key={this.props.column.name}
         ref={this.plotElt}>
       </div>
     </>
