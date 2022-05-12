@@ -355,6 +355,10 @@ class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, 
     }));
   }
 
+  componentDidMount() {
+    this.componentDidUpdate();
+  }
+
   componentDidUpdate() {
     this.plot(this.plotElt.current);
   }

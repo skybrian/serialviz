@@ -38,20 +38,20 @@ export interface PlotSettings {
 }
 
 export class ColumnStates {
-  #states: Map<string, ColumnState>;
+  private states: Map<string, ColumnState>;
 
   constructor(states?: Map<string, ColumnState>) {
-    this.#states = states ?? new Map();
+    this.states = states ?? new Map();
   }
 
-  has = (name: string): boolean => this.#states.has(name);
+  has = (name: string): boolean => this.states.has(name);
 
   get(name: string): ColumnState {
-    return this.#states.get(name) ?? "hidden";
+    return this.states.get(name) ?? "hidden";
   }
 
   get columns(): string[] {
-    return [...this.#states.keys()];
+    return [...this.states.keys()];
   }
 
   withColumns(tableColumns: string[]): ColumnStates {
@@ -85,7 +85,7 @@ export class ColumnStates {
   }
 
   withToggle(name: string): ColumnStates {
-    const newStates = new Map(this.#states);
+    const newStates = new Map(this.states);
 
     let toggled: ColumnState;
     switch (this.get(name)) {
@@ -260,6 +260,7 @@ export class AppState extends EventTarget implements DeviceOutput {
   toggleColumn = (name: string): void => {
     const toggled = this.#plotSettings.columnStates.withToggle(name);
     this.#plotSettings = { columnStates:  toggled };
+    this.#save();
   }
 
   windowChanged(): void {
