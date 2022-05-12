@@ -247,7 +247,7 @@ class PlotView extends Component<PlotProps> {
     let marks = [];
     if (table.range.length >= 2) { // avoid high cardinality warning in Plot.
       for (let col of table.columns) {
-        if (this.props.settings.selectedColumns.has(col.name)) {
+        if (this.props.settings.columnStates.get(col.name) == "top") {
           const start = col.range.start;
           marks.push(Plot.lineY(col.values, { x: (_, i) => i + start, stroke: this.colorFor(col.name) }));
         }
@@ -284,11 +284,10 @@ class PlotView extends Component<PlotProps> {
   }
 
   makeToggleButton = (name: string) => {
-    const lit = this.props.settings.selectedColumns.has(name);
-    const bottom = this.bottomColumns().map((c) => c.name).includes(name);
+    const state = this.props.settings.columnStates.get(name);
+    const classes = "swatch" + (state == "top" ? " swatch-lit" : (state == "bottom" ? " swatch-bottom" : ""));
     return <div class="swatch-button">
-      <span class={"swatch" + (lit ? " swatch-lit" : (bottom ? " swatch-bottom" : ""))}
-        style={`background-color: ${this.colorFor(name, { lit: lit })}`}> </span>
+      <span class={classes} style={`background-color: ${this.colorFor(name, { lit: state != "hidden" })}`}> </span>
       <button class="pure-button"
         onClick={() => this.props.toggleColumn(name)}
       >{name}</button>
@@ -296,8 +295,8 @@ class PlotView extends Component<PlotProps> {
   };
 
   bottomColumns(): ColumnSlice[] {
-    const selected = this.props.settings.selectedColumns;
-    return this.props.table.columns.filter((c) => !selected.has(c.name)).slice(0, 4);
+    const states = this.props.settings.columnStates;
+    return this.props.table.columns.filter((c) => states.get(c.name) == "bottom");
   }
 
   render() {

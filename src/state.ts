@@ -5,7 +5,9 @@ import { TableBuffer, Table, Row, parseRow } from './csv';
 const logHeadLimit = 100;
 const logTailLimit = 100;
 const tableBufferLimit = 500;
+
 export const livePlotLimit = 500;
+const bottomColumnLimit = 4;
 
 if (livePlotLimit > tableBufferLimit) {
   throw "can't plot more rows than in buffer";
@@ -29,8 +31,72 @@ export interface PortState {
   log: Log;
 }
 
+export type ColumnState = "top" | "bottom" | "hidden";
+
 export interface PlotSettings {
-  selectedColumns: Set<string>;
+  columnStates: ColumnStates;
+}
+
+export class ColumnStates {
+  #states: Map<string, ColumnState>;
+
+  constructor(states?: Map<string, ColumnState>) {
+    this.#states = states ?? new Map();
+  }
+
+  has = (name: string): boolean => this.#states.has(name);
+
+  get(name: string): ColumnState {
+    return this.#states.get(name) ?? "hidden";
+  }
+
+  get columns(): string[] {
+    return [...this.#states.keys()];
+  }
+
+  withColumns(tableColumns: string[]): ColumnStates {
+    const newColumns = tableColumns.filter((c) => !this.has(c));
+    const topColumns = this.columns.filter((c) => this.get(c) == "top");
+    const bottomColumns = this.columns.filter((c) => this.get(c) == "bottom");
+
+    if (newColumns.length == 0) return this;
+
+    const next = new Map<string, ColumnState>();
+    if (topColumns.length == 0) {
+      next.set(newColumns.shift(), "top");
+    }
+
+    for (let i = 0; i < bottomColumnLimit - bottomColumns.length; i++) {
+      const c = newColumns.shift();
+      if (!c) break;
+      next.set(c, "bottom");
+    }
+
+    while (newColumns.length > 0) {
+      const c = newColumns.shift();
+      next.set(c, "hidden");
+    }
+
+    for (let c of this.columns) {
+      next.set(c, this.get(c));
+    }
+
+    return new ColumnStates(next);
+  }
+
+  withToggle(name: string): ColumnStates {
+    const newStates = new Map(this.#states);
+
+    let toggled: ColumnState;
+    switch (this.get(name)) {
+      case "top": toggled = "bottom"; break;
+      case "bottom": toggled = "hidden"; break;
+      case "hidden": toggled = "top"; break;
+    }
+
+    newStates.set(name, toggled);
+    return new ColumnStates(newStates);
+  }
 }
 
 export interface AppProps {
@@ -58,7 +124,7 @@ export class AppState extends EventTarget implements DeviceOutput {
   #linesAdded = 0;
 
   #rows = new TableBuffer(tableBufferLimit);
-  #plotSettings = {selectedColumns: new Set<string>()};
+  #plotSettings = {columnStates: new ColumnStates()};
 
   #windowChanges = 0;
 
@@ -136,11 +202,9 @@ export class AppState extends EventTarget implements DeviceOutput {
 
     this.#rows.push(row);
 
-    if (tableKey != this.#rows.table?.key && this.#plotSettings.selectedColumns.size == 0) {
-      const firstColumn = this.#rows.table.columnNames.at(0);
-      if (firstColumn) {
-        this.toggleColumn(firstColumn);
-      }
+    if (tableKey != this.#rows.table?.key) {
+      const next = this.#plotSettings.columnStates.withColumns(this.#rows.table.columnNames);
+      this.#plotSettings = {...this.#plotSettings, columnStates: next };
     }
   }
 
@@ -194,14 +258,8 @@ export class AppState extends EventTarget implements DeviceOutput {
   }
 
   toggleColumn = (name: string): void => {
-    const cols = new Set(this.#plotSettings.selectedColumns);
-    if (cols.has(name)) {
-      cols.delete(name);
-    } else {
-      cols.add(name);
-    }
-    this.#plotSettings = {...this.#plotSettings, selectedColumns: cols };
-    this.#save();
+    const toggled = this.#plotSettings.columnStates.withToggle(name);
+    this.#plotSettings = { columnStates:  toggled };
   }
 
   windowChanged(): void {
