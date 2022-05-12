@@ -181,13 +181,21 @@ export class AppState extends EventTarget implements DeviceOutput {
     this.requestChange("portGone", { message: message });
   }
 
+  #saveRequested = false;
+
   pushDeviceOutput(line: string): void {
     this.#pushLog(line);
     const row = parseRow(line);
     if (row) {
       this.#pushRow(row);
     }
-    this.#save();
+    if (!this.#saveRequested) {
+      requestAnimationFrame(() => {
+        this.#save();
+        this.#saveRequested = false;
+      });
+      this.#saveRequested = true;
+    }
   }
 
   // other actions

@@ -19,7 +19,7 @@ export class SerialPortDevice implements Device {
       try {
         await this.port.open({
           baudRate: 115200,
-          bufferSize: 40,
+          bufferSize: 4096,
           flowControl: "hardware",
         });
 
