@@ -1,11 +1,11 @@
 'use strict';
 
-import { h, Component, ComponentChildren, toChildArray, createRef, Fragment } from 'preact';
-import { ColumnSlice, Table } from './csv';
+import { h, Component, ComponentChildren, toChildArray, createRef, Fragment, VNode } from 'preact';
+import { ColumnSlice, TableSlice } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { LogLine, PlotSettings, AppProps, livePlotLimit } from './state';
+import { LogLine, PlotSettings, AppProps, SelectedTab } from './state';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -38,7 +38,7 @@ export const ConnectView = (props: ConnectProps) => {
 
 export const AppView = (props: AppProps) => {
 
-  const button = () => {
+  const stopButton = () => {
     switch (props.state.status) {
       case "reading":
         return <button onClick={props.stop} class="pure-button pure-button-primary">Stop</button>;
@@ -51,54 +51,57 @@ export const AppView = (props: AppProps) => {
 
   const log = props.state.log;
   const table = props.table;
+  const tabs = Object.values(SelectedTab);
 
-  return <div class="port-view">
+  const rightButtons = <div>
+    {(props.tab != SelectedTab.plot) ? "" : <button onClick={props.toggleZoom} class="pure-button">Zoom</button>}
+  </div>
+
+  return <div class="app-view">
     <div>
-      {button()}
+      {stopButton()}
     </div>
-    <TabView labels={["Head", "Tail", "Plot"]} defaultSelected={1} >
+    <TabView labels={tabs} rightOfTabs={rightButtons} selected={props.tab} chooseTab={props.chooseTab}>
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
-      {table == null ? "" : <PlotView table={table} settings={props.plotSettings} windowChanges={props.windowChanges} toggleColumn={props.toggleColumn} />}
+      {table == null ? "" : <PlotView
+        table={table}
+        settings={props.plotSettings}
+        windowChanges={props.windowChanges}
+        toggleColumn={props.toggleColumn} />}
     </TabView>
   </div>;
 }
 
 interface TabProps {
   labels: string[];
-  defaultSelected: number;
+  rightOfTabs?: VNode;
+  selected: string;
+  chooseTab: (label: string) => void;
   children: ComponentChildren;
 }
 
-class TabView extends Component<TabProps, { selected: number }> {
-  state = { selected: 0 }
-
-  componentDidMount(): void {
-    this.setState({ selected: this.props.defaultSelected })
-  }
-
-  tabClicked(choice: number) {
-    this.setState({ selected: choice });
-  }
-
-  render() {
-    const selected = this.state.selected;
-    const labels = this.props.labels;
-    const children = toChildArray(this.props.children);
-    return <div class="tab-view">
+const TabView = (props: TabProps) => {
+  const selected = props.selected;
+  const labels = props.labels;
+  const children = toChildArray(props.children);
+  return <div class="tab-view">
+    <div class="tab-row">
       <div class="pure-menu pure-menu-horizontal"><ul class="pure-menu-list">
-        {labels.map((label, i) =>
-          <li class={i == selected ? "pure-menu-item pure-menu-selected" : "pure-menu-item"}>
-            <a href="#" class="pure-menu-link" onClick={() => this.tabClicked(i)}>{label}</a>
+        {labels.map((label) =>
+          <li class={label == selected ? "pure-menu-item pure-menu-selected" : "pure-menu-item"}>
+            <a href="#" class="pure-menu-link" onClick={() => props.chooseTab(label)}>{label}</a>
           </li>)}
-      </ul></div>
-      {children.map((child, i) => {
-        if (i == selected) {
-          return <div class="tab-view-selected">{child}</div>
-        }
-      })}
+      </ul>
+      </div>
+      {(props.rightOfTabs ? <div class="right-of-tabs">{props.rightOfTabs}</div> : "")}
     </div>
-  }
+    {children.map((child, i) => {
+      if (labels[i] == selected) {
+        return <div class="tab-view-selected">{child}</div>
+      }
+    })}
+  </div>
 }
 
 interface TermProps {
@@ -209,7 +212,7 @@ const darkColorRange = [
 const maxUnselectedViews = 4;
 
 interface PlotProps {
-  table: Table;
+  table: TableSlice;
   settings: PlotSettings;
   windowChanges: number;
   toggleColumn: (name: string) => void;
@@ -229,9 +232,10 @@ class PlotView extends Component<PlotProps> {
   }
 
   get xDomain(): [number, number] {
+    const windowSize = this.props.settings.windowSize;
     const r = this.props.table.range;
-    const start = Math.max(0, r.end - livePlotLimit);
-    return [start,  start + livePlotLimit];
+    const start = Math.max(0, r.end - windowSize);
+    return [start, start + windowSize];
   }
 
   plot(parent: HTMLDivElement) {

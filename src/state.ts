@@ -1,16 +1,18 @@
 'use strict';
 
-import { TableBuffer, Table, Row, parseRow } from './csv';
+import { TableBuffer, TableSlice, Row, parseRow, range } from './csv';
 
 const logHeadLimit = 100;
 const logTailLimit = 100;
-const tableBufferLimit = 500;
+const tableBufferLimit = 1000;
 
-export const livePlotLimit = 500;
+const windowSizes = [500, 1000];
 const bottomColumnLimit = 4;
 
-if (livePlotLimit > tableBufferLimit) {
-  throw "can't plot more rows than in buffer";
+for (let size of windowSizes) {
+  if (size > tableBufferLimit) {
+    throw "can't plot more rows than in buffer";
+  }
 }
 
 type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
@@ -35,6 +37,7 @@ export type ColumnState = "top" | "bottom" | "hidden";
 
 export interface PlotSettings {
   columnStates: ColumnStates;
+  windowSize: number;
 }
 
 export class ColumnStates {
@@ -99,15 +102,24 @@ export class ColumnStates {
   }
 }
 
+export enum SelectedTab {
+  head = "Head",
+  tail = "Tail",
+  plot = "Plot"
+}
+
 export interface AppProps {
   state: PortState;
-  table: Table;
+  table: TableSlice;
+  tab: SelectedTab;
   plotSettings: PlotSettings;
   windowChanges: number;
 
   stop: () => void;
   restart: () => void;
+  chooseTab: (tab: SelectedTab) => void;
   toggleColumn: (name: string) => void;
+  toggleZoom: () => void;
 }
 
 export interface DeviceOutput {
@@ -124,7 +136,10 @@ export class AppState extends EventTarget implements DeviceOutput {
   #linesAdded = 0;
 
   #rows = new TableBuffer(tableBufferLimit);
-  #plotSettings = {columnStates: new ColumnStates()};
+  #windowSizeIndex = 0;
+
+  #tab = SelectedTab.tail;
+  #plotSettings = { columnStates: new ColumnStates(), windowSize: windowSizes[this.#windowSizeIndex] } as PlotSettings;
 
   #windowChanges = 0;
 
@@ -135,15 +150,23 @@ export class AppState extends EventTarget implements DeviceOutput {
   // getters
 
   get props(): AppProps {
+    const windowSize = this.#plotSettings.windowSize;
+    let rowRange = this.#rows.range;
+    if (rowRange.length > windowSize) {
+      rowRange = range(rowRange.end - windowSize, rowRange.end);
+    }
     return {
       state: { status: this.#status, log: this.#log },
-      table: this.#rows.table,
+      table: this.#rows.slice(rowRange),
+      tab: this.#tab,
       plotSettings: this.#plotSettings,
       windowChanges: this.#windowChanges,
 
       stop: this.requestClose,
       restart: this.requestRestart,
-      toggleColumn: this.toggleColumn
+      chooseTab: this.chooseTab,
+      toggleColumn: this.toggleColumn,
+      toggleZoom: this.toggleZoom,
     }
   }
 
@@ -206,20 +229,20 @@ export class AppState extends EventTarget implements DeviceOutput {
   }
 
   #pushRow(row: Row): void {
-    const tableKey = this.#rows.table?.key;
+    const prevKey = this.#rows.key;
 
     this.#rows.push(row);
 
-    if (tableKey != this.#rows.table?.key) {
-      const next = this.#plotSettings.columnStates.withColumns(this.#rows.table.columnNames);
-      this.#plotSettings = {...this.#plotSettings, columnStates: next };
+    if (prevKey != this.#rows.key) {
+      const next = this.#plotSettings.columnStates.withColumns(this.#rows.columnNames);
+      this.#plotSettings = { ...this.#plotSettings, columnStates: next };
     }
   }
 
   #pushLog(line: string): void {
     const logLine = { key: this.#linesAdded, value: line };
 
-    let  head = this.#log.head;
+    let head = this.#log.head;
     if (head.length < logHeadLimit) {
       head = head.concat([logLine]);
     }
@@ -265,9 +288,23 @@ export class AppState extends EventTarget implements DeviceOutput {
     return true;
   }
 
+  chooseTab = (tab: SelectedTab): void => {
+    this.#tab = tab;
+    this.#save();
+  }
+
   toggleColumn = (name: string): void => {
     const toggled = this.#plotSettings.columnStates.withToggle(name);
-    this.#plotSettings = { columnStates:  toggled };
+    this.#plotSettings = { ...this.#plotSettings, columnStates: toggled };
+    this.#save();
+  }
+
+  toggleZoom = (): void => {
+    this.#windowSizeIndex++;
+    if (this.#windowSizeIndex >= windowSizes.length) {
+      this.#windowSizeIndex = 0;
+    }
+    this.#plotSettings = { ...this.#plotSettings, windowSize: windowSizes[this.#windowSizeIndex] };
     this.#save();
   }
 

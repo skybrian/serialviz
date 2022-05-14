@@ -171,9 +171,13 @@ export class Range {
       yield i;
     }
   }
+
+  toString(): string {
+    return `range({this.start}, {this.end})`;
+  }
 }
 
-export interface Table {
+export interface TableSlice {
   key: number;
   columnNames: string[];
   range: Range;
@@ -196,10 +200,27 @@ export class TableBuffer {
 
   constructor(readonly rowLimit: number) { }
 
-  get table(): Table | null {
+  get key(): number { return this.#tablesSeen; }
+
+  get columnNames(): string[] | null { return this.#columnNames; }
+
+  get range(): Range {
+    return range(this.#rowStart, this.#rowEnd);
+  }
+
+  slice(rowRange?: Range): TableSlice | null {
     if (this.#columnNames == null) return null;
 
-    const rowRange = range(this.#rowStart, this.#rowEnd)
+    if (rowRange == null) {
+      rowRange = this.range;
+    } else {
+      if (rowRange.start < this.#rowStart || rowRange.end > this.#rowEnd) {
+        throw `range out of bounds: ${rowRange}`;
+      }
+    }
+
+    const sliceStart = rowRange.start - this.#rowStart;
+    const sliceEnd = rowRange.end - this.#rowStart;
 
     const columns = new Array<ColumnSlice>(this.#columnNames.length);
     for (let i = 0; i < columns.length; i++) {
@@ -208,7 +229,7 @@ export class TableBuffer {
         key: `${this.#tablesSeen}-${name}`,
         name: name,
         range: rowRange,
-        values: this.#columns[i].slice(0, this.#rowEnd)
+        values: this.#columns[i].slice(sliceStart, sliceEnd)
       };
     }
 
@@ -219,8 +240,6 @@ export class TableBuffer {
       columns: columns,
     };
   }
-
-
 
   clear() {
     this.#tablesSeen = 0;

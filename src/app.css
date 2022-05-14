@@ -32,13 +32,21 @@ body {
     margin-bottom: 20px;
 }
 
-.port-view {
+.app-view {
     flex-grow: 1;
     height: 50%;
     width: 100%;
 
     display: flex;
     flex-direction: column;
+}
+
+.tab-row {
+    display: flex;
+}
+
+.right-of-tabs {
+    margin-left: auto;
 }
 
 .tab-view {

@@ -264,7 +264,7 @@ testProp('Ranges should compare nonequal when they contain different values',
 testProp('TableBuffer should preserve the last data rows added to the current table', [fc.nat(), fc.array(fc.boolean())], (t, limit, rowTypes) => {
 
   const buf = new TableBuffer(limit);
-  t.is(buf.table, null);
+  t.is(buf.slice(), null);
   let tablesAdded = 0;
   let rowsAdded = 0;
   let columnName = null;
@@ -283,7 +283,7 @@ testProp('TableBuffer should preserve the last data rows added to the current ta
       rowsAdded += 1;
     }
 
-    const table = buf.table;
+    const table = buf.slice();
     t.is(table.key, tablesAdded);
     t.deepEqual(table.columnNames, [columnName], `should have column named "${columnName}"`);
 
