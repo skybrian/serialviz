@@ -53,15 +53,24 @@ export const AppView = (props: AppProps) => {
   const table = props.table;
   const tabs = Object.values(SelectedTab);
 
-  const rightButtons = <div>
-    {(props.tab != SelectedTab.plot) ? "" : <button onClick={props.toggleZoom} class="pure-button">Zoom</button>}
-  </div>
+  let zoom = <div></div>;
+  if ( props.tab == SelectedTab.plot) {
+    const zoomRange = props.plotSettings.zoomRange;
+    zoom = <div class="zoom">
+      Zoom <input
+        type="range"
+        disabled={zoomRange.length == 0}
+        min={zoomRange.start} max={zoomRange.end}
+        value={props.plotSettings.windowSize}
+        onInput={(e) => props.zoom(Number(e.currentTarget.value))}/>
+    </div>
+  }
 
   return <div class="app-view">
     <div>
       {stopButton()}
     </div>
-    <TabView labels={tabs} rightOfTabs={rightButtons} selected={props.tab} chooseTab={props.chooseTab}>
+    <TabView labels={tabs} rightOfTabs={zoom} selected={props.tab} chooseTab={props.chooseTab}>
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
       {table == null ? "" : <PlotView

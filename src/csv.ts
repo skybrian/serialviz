@@ -162,6 +162,10 @@ export class Range {
 
   get length() { return this.end - this.start; }
 
+  contains(val: number): boolean {
+    return val >= this.start && val <= this.end;
+  }
+
   equals(b: Range): boolean {
     return this.start == b.start && this.end == b.end;
   }

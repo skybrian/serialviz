@@ -49,6 +49,14 @@ body {
     margin-left: auto;
 }
 
+.zoom {
+    display: flex;
+}
+
+.zoom input {
+    margin-left: 1ex;
+}
+
 .tab-view {
     flex-grow: 1;
     height: 50%;

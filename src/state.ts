@@ -1,19 +1,13 @@
 'use strict';
 
-import { TableBuffer, TableSlice, Row, parseRow, range } from './csv';
+import { TableBuffer, TableSlice, Row, parseRow, range, Range } from './csv';
 
 const logHeadLimit = 100;
 const logTailLimit = 100;
-const tableBufferLimit = 1000;
+const tableBufferLimit = 10000;
+const zoomRangeStart = 500;
 
-const windowSizes = [500, 1000];
 const bottomColumnLimit = 4;
-
-for (let size of windowSizes) {
-  if (size > tableBufferLimit) {
-    throw "can't plot more rows than in buffer";
-  }
-}
 
 type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
 
@@ -38,6 +32,7 @@ export type ColumnState = "top" | "bottom" | "hidden";
 export interface PlotSettings {
   columnStates: ColumnStates;
   windowSize: number;
+  zoomRange: Range;
 }
 
 export class ColumnStates {
@@ -119,7 +114,7 @@ export interface AppProps {
   restart: () => void;
   chooseTab: (tab: SelectedTab) => void;
   toggleColumn: (name: string) => void;
-  toggleZoom: () => void;
+  zoom: (windowSize: number) => void;
 }
 
 export interface DeviceOutput {
@@ -136,10 +131,9 @@ export class AppState extends EventTarget implements DeviceOutput {
   #linesAdded = 0;
 
   #rows = new TableBuffer(tableBufferLimit);
-  #windowSizeIndex = 0;
 
   #tab = SelectedTab.tail;
-  #plotSettings = { columnStates: new ColumnStates(), windowSize: windowSizes[this.#windowSizeIndex] } as PlotSettings;
+  #plotSettings = { columnStates: new ColumnStates(), windowSize: zoomRangeStart, zoomRange: range(zoomRangeStart, zoomRangeStart) };
 
   #windowChanges = 0;
 
@@ -166,7 +160,7 @@ export class AppState extends EventTarget implements DeviceOutput {
       restart: this.requestRestart,
       chooseTab: this.chooseTab,
       toggleColumn: this.toggleColumn,
-      toggleZoom: this.toggleZoom,
+      zoom: this.zoom,
     }
   }
 
@@ -235,8 +229,11 @@ export class AppState extends EventTarget implements DeviceOutput {
 
     if (prevKey != this.#rows.key) {
       const next = this.#plotSettings.columnStates.withColumns(this.#rows.columnNames);
-      this.#plotSettings = { ...this.#plotSettings, columnStates: next };
+      this.#plotSettings = { ...this.#plotSettings, columnStates: next};
     }
+
+    const zoomRangeEnd = Math.max(zoomRangeStart, this.#rows.range.length);
+    this.#plotSettings = { ...this.#plotSettings, zoomRange: range(zoomRangeStart, zoomRangeEnd) };
   }
 
   #pushLog(line: string): void {
@@ -299,12 +296,9 @@ export class AppState extends EventTarget implements DeviceOutput {
     this.#save();
   }
 
-  toggleZoom = (): void => {
-    this.#windowSizeIndex++;
-    if (this.#windowSizeIndex >= windowSizes.length) {
-      this.#windowSizeIndex = 0;
-    }
-    this.#plotSettings = { ...this.#plotSettings, windowSize: windowSizes[this.#windowSizeIndex] };
+  zoom = (windowSize: number): void => {
+    if (!this.#plotSettings.zoomRange.contains(windowSize)) throw `zoom out of bounds: ${windowSize}`;
+    this.#plotSettings = { ...this.#plotSettings, windowSize: windowSize };
     this.#save();
   }
 
