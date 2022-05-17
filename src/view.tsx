@@ -1,7 +1,7 @@
 'use strict';
 
 import { h, Component, ComponentChildren, toChildArray, createRef, Fragment, VNode } from 'preact';
-import { ColumnSlice, TableSlice, Range } from './csv';
+import { ColumnSlice, TableSlice, Range, range } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
@@ -54,7 +54,7 @@ export const AppView = (props: AppProps) => {
   const tabs = Object.values(SelectedTab);
 
   let zoom = <div></div>;
-  if ( props.tab == SelectedTab.plot) {
+  if (props.tab == SelectedTab.plot) {
     const zoomRange = props.plotSettings.zoomRange;
     zoom = <div class="zoom">
       Zoom <input
@@ -62,7 +62,7 @@ export const AppView = (props: AppProps) => {
         disabled={zoomRange.length == 0}
         min={zoomRange.start} max={zoomRange.end}
         value={props.plotSettings.range.length}
-        onInput={(e) => props.zoom(Number(e.currentTarget.value))}/>
+        onInput={(e) => props.zoom(Number(e.currentTarget.value))} />
     </div>
   }
 
@@ -78,7 +78,8 @@ export const AppView = (props: AppProps) => {
         table={table}
         settings={props.plotSettings}
         windowChanges={props.windowChanges}
-        toggleColumn={props.toggleColumn} />}
+        toggleColumn={props.toggleColumn}
+        pan={props.pan} />}
     </TabView>
   </div>;
 }
@@ -217,6 +218,7 @@ interface PlotProps {
   settings: PlotSettings;
   windowChanges: number;
   toggleColumn: (name: string) => void;
+  pan: (delta: number) => void;
 }
 
 class PlotView extends Component<PlotProps> {
@@ -276,12 +278,6 @@ class PlotView extends Component<PlotProps> {
     this.mainPlot(this.plotElt.current);
   }
 
-  // shouldComponentUpdate(next: PlotProps): boolean {
-  //   return !document.hidden && !this.props.table.range.equals(next.table.range) ||
-  //     this.props.windowChanges != next.windowChanges ||
-  //     this.props.settings != next.settings;
-  // }
-
   componentDidUpdate() {
     this.mainPlot(this.plotElt.current);
   }
@@ -308,7 +304,7 @@ class PlotView extends Component<PlotProps> {
         {this.props.table.columnNames.map((name) => this.makeToggleButton(name))}
       </div>
       <div class="plot-main">
-        {this.props.status == "reading" ? "" : <Slider bounds={this.props.settings.bounds} thumb={this.props.settings.range} />}
+        {this.props.status == "reading" ? "" : <Slider bounds={this.props.settings.bounds} thumb={this.props.settings.range} onSlide={this.props.pan} />}
         <div class="plot-main-graph" ref={this.plotElt} />
       </div>
       {this.bottomColumns().map((col) =>
@@ -328,12 +324,53 @@ class PlotView extends Component<PlotProps> {
   }
 }
 
-const Slider = (props: {bounds: Range, thumb: Range}) => {
-  const leftMarginPercent = 100 * (props.thumb.start - props.bounds.start) / props.bounds.length;
-  const thumbPercent = 100 * props.thumb.length / props.bounds.length;
-  return <div class="slider">
-    <div class="thumb" style={`margin-left: ${leftMarginPercent}%; width: ${thumbPercent}%`}> </div>
-  </div>
+interface SliderProps {
+  bounds: Range;
+  thumb: Range;
+  onSlide: (delta: number) => void;
+}
+
+class Slider extends Component<SliderProps> {
+  elt = createRef<HTMLDivElement>();
+  prevX = null as number;
+
+  beginSliding = (e: PointerEvent) => {
+    this.prevX = e.clientX;
+    this.elt.current.setPointerCapture(e.pointerId);
+    this.elt.current.onpointermove = this.slide;
+  }
+
+  stopSliding = (e: PointerEvent) => {
+    this.prevX = null;
+    this.elt.current.releasePointerCapture(e.pointerId);
+    this.elt.current.onpointermove = null;
+  }
+
+  slide = (e: PointerEvent) => {
+    const sliderWidth = this.elt.current.clientWidth;
+    const boundsWidth = this.props.bounds.length;
+    if (sliderWidth == 0 || boundsWidth == 0 || this.prevX == null) return;
+
+    const delta = Math.round((e.clientX - this.prevX) * boundsWidth / sliderWidth);
+    if (delta != 0) {
+      this.props.onSlide(delta);
+      this.prevX += delta * sliderWidth / boundsWidth;
+    }
+  }
+
+  render() {
+    const bounds = this.props.bounds;
+    const thumb = this.props.thumb;
+
+    const leftMarginPercent = 100 * (thumb.start - bounds.start) / bounds.length;
+    const thumbPercent = 100 * thumb.length / bounds.length;
+
+    return <div class="slider" ref={this.elt}
+      onPointerDown={this.beginSliding}
+      onPointerUp={this.stopSliding}>
+      <div class="thumb" style={`margin-left: ${leftMarginPercent}%; width: ${thumbPercent}%`}> </div>
+    </div>
+  }
 }
 
 class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, number], color: string }> {

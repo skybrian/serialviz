@@ -116,6 +116,7 @@ export interface AppProps {
   chooseTab: (tab: SelectedTab) => void;
   toggleColumn: (name: string) => void;
   zoom: (windowSize: number) => void;
+  pan: (deltaRows: number) => void;
 }
 
 export interface DeviceOutput {
@@ -164,6 +165,7 @@ export class AppState extends EventTarget implements DeviceOutput {
       chooseTab: this.chooseTab,
       toggleColumn: this.toggleColumn,
       zoom: this.zoom,
+      pan: this.pan,
     }
   }
 
@@ -283,6 +285,11 @@ export class AppState extends EventTarget implements DeviceOutput {
       this.#log = { key: this.#log.key + 1, head: [], tail: [] };
       this.#linesAdded = 0;
       this.#rows.clear();
+      this.#plotSettings = {...this.#plotSettings,
+        range: range(0, zoomRangeStart),
+        bounds: range(0, zoomRangeStart),
+        zoomRange: range(zoomRangeStart, zoomRangeStart)
+      };
     }
 
     if (options.message) {
@@ -321,6 +328,21 @@ export class AppState extends EventTarget implements DeviceOutput {
 
     this.#plotSettings = { ...this.#plotSettings, range: plot };
     this.#save();
+  }
+
+  pan = (delta: number) => {
+    const bounds = this.#plotSettings.bounds;
+    const old = this.#plotSettings.range;
+    if (delta < 0 && old.start + delta < bounds.start) {
+      delta = bounds.start - old.start;
+    } else if (delta > 0 && old.end + delta > bounds.end) {
+      delta = bounds.end - old.end;
+    }
+    if (delta != 0) {
+      const newRange = range(old.start + delta, old.end + delta);
+      this.#plotSettings = { ...this.#plotSettings, range: newRange};
+      this.#save();
+    }
   }
 
   windowChanged(): void {
