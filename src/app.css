@@ -138,10 +138,20 @@ body {
 .plot-main {
     display: flex;
     flex-direction: column;
-    transition: height 1s;
 }
 
-.plot-main svg {
+.slider  {
+    display: flex;
+    margin-left: 40px;
+    height: 1ex;
+    border: 1px solid grey;
+}
+
+.slider .thumb {
+    background-color: lightgrey;
+}
+
+.plot-main-graph {
     flex-grow: 1;
 }
 

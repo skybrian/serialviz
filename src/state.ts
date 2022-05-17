@@ -9,7 +9,7 @@ const zoomRangeStart = 500;
 
 const bottomColumnLimit = 4;
 
-type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
+export type PortStatus = "start" | "connecting" | "reading" | "closing" | "closed" | "portGone";
 
 export interface Log {
   key: number,
@@ -31,7 +31,8 @@ export type ColumnState = "top" | "bottom" | "hidden";
 
 export interface PlotSettings {
   columnStates: ColumnStates;
-  windowSize: number;
+  range: Range;
+  bounds: Range;
   zoomRange: Range;
 }
 
@@ -133,7 +134,11 @@ export class AppState extends EventTarget implements DeviceOutput {
   #rows = new TableBuffer(tableBufferLimit);
 
   #tab = SelectedTab.tail;
-  #plotSettings = { columnStates: new ColumnStates(), windowSize: zoomRangeStart, zoomRange: range(zoomRangeStart, zoomRangeStart) };
+  #plotSettings = {
+    columnStates: new ColumnStates(),
+    range: range(0, zoomRangeStart),
+    bounds: range(0, zoomRangeStart),
+    zoomRange: range(zoomRangeStart, zoomRangeStart) };
 
   #windowChanges = 0;
 
@@ -144,11 +149,9 @@ export class AppState extends EventTarget implements DeviceOutput {
   // getters
 
   get props(): AppProps {
-    const windowSize = this.#plotSettings.windowSize;
-    let rowRange = this.#rows.range;
-    if (rowRange.length > windowSize) {
-      rowRange = range(rowRange.end - windowSize, rowRange.end);
-    }
+    const fullRange = this.#rows.range;
+    const plotRange = this.#plotSettings.range;
+    const rowRange = range(Math.max(fullRange.start, plotRange.start), Math.min(fullRange.end, plotRange.end));
     return {
       state: { status: this.#status, log: this.#log },
       table: this.#rows.slice(rowRange),
@@ -198,21 +201,13 @@ export class AppState extends EventTarget implements DeviceOutput {
     this.requestChange("portGone", { message: message });
   }
 
-  #saveRequested = false;
-
   pushDeviceOutput(line: string): void {
     this.#pushLog(line);
     const row = parseRow(line);
     if (row) {
       this.#pushRow(row);
     }
-    if (!this.#saveRequested) {
-      requestAnimationFrame(() => {
-        this.#save();
-        this.#saveRequested = false;
-      });
-      this.#saveRequested = true;
-    }
+    this.#save();
   }
 
   // other actions
@@ -232,8 +227,23 @@ export class AppState extends EventTarget implements DeviceOutput {
       this.#plotSettings = { ...this.#plotSettings, columnStates: next};
     }
 
-    const zoomRangeEnd = Math.max(zoomRangeStart, this.#rows.range.length);
-    this.#plotSettings = { ...this.#plotSettings, zoomRange: range(zoomRangeStart, zoomRangeEnd) };
+    let bounds = this.#rows.range;
+    if (bounds.end < zoomRangeStart) {
+      bounds = range(bounds.start, zoomRangeStart);
+    }
+
+    const zoomRangeEnd = bounds.length;
+
+    let plotRange = this.#plotSettings.range;
+    if (plotRange.end == bounds.end - 1) {
+      plotRange = range(plotRange.start + 1, plotRange.end + 1);
+    }
+
+    this.#plotSettings = { ...this.#plotSettings,
+      range: plotRange,
+      bounds: bounds,
+      zoomRange: range(zoomRangeStart, zoomRangeEnd)
+    };
   }
 
   #pushLog(line: string): void {
@@ -297,8 +307,19 @@ export class AppState extends EventTarget implements DeviceOutput {
   }
 
   zoom = (windowSize: number): void => {
-    if (!this.#plotSettings.zoomRange.contains(windowSize)) throw `zoom out of bounds: ${windowSize}`;
-    this.#plotSettings = { ...this.#plotSettings, windowSize: windowSize };
+    let plot = this.#plotSettings.range;
+    const full = this.#rows.range;
+
+    if (plot.end == full.end) {
+      plot = range(Math.max(full.start, full.end - windowSize), full.end);
+    } else {
+      const middle = plot.start + plot.length/2;
+      const start = Math.max(full.start, Math.min(full.end - windowSize, Math.floor(middle - windowSize/2)));
+      const end = Math.max(zoomRangeStart, Math.min(start + windowSize, full.end));
+      plot = range(start, end);
+    }
+
+    this.#plotSettings = { ...this.#plotSettings, range: plot };
     this.#save();
   }
 

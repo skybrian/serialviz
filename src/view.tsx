@@ -1,11 +1,11 @@
 'use strict';
 
 import { h, Component, ComponentChildren, toChildArray, createRef, Fragment, VNode } from 'preact';
-import { ColumnSlice, TableSlice } from './csv';
+import { ColumnSlice, TableSlice, Range } from './csv';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import * as Plot from "@observablehq/plot";
-import { LogLine, PlotSettings, AppProps, SelectedTab } from './state';
+import { LogLine, PlotSettings, AppProps, SelectedTab, PortStatus } from './state';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -61,7 +61,7 @@ export const AppView = (props: AppProps) => {
         type="range"
         disabled={zoomRange.length == 0}
         min={zoomRange.start} max={zoomRange.end}
-        value={props.plotSettings.windowSize}
+        value={props.plotSettings.range.length}
         onInput={(e) => props.zoom(Number(e.currentTarget.value))}/>
     </div>
   }
@@ -74,6 +74,7 @@ export const AppView = (props: AppProps) => {
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
       {table == null ? "" : <PlotView
+        status={props.state.status}
         table={table}
         settings={props.plotSettings}
         windowChanges={props.windowChanges}
@@ -140,16 +141,6 @@ class TermView extends Component<TermProps> {
     this.terminal.open(this.terminalElt.current);
     this.fitAddon.fit();
     this.componentDidUpdate();
-  }
-
-  shouldComponentUpdate(nextProps: TermProps): boolean {
-    const nextKey = nextProps.lines.length == 0 ? -1 : nextProps.lines.at(-1).key;
-    const thisKey = this.props.lines.length == 0 ? -1 : this.props.lines.at(-1).key;
-    return (
-      nextProps.logKey != this.props.logKey ||
-      nextKey != thisKey ||
-      nextProps.windowChanges != this.lastWindowChangeSeen
-    );
   }
 
   componentDidUpdate() {
@@ -221,6 +212,7 @@ const darkColorRange = [
 const maxUnselectedViews = 4;
 
 interface PlotProps {
+  status: PortStatus;
   table: TableSlice;
   settings: PlotSettings;
   windowChanges: number;
@@ -241,13 +233,11 @@ class PlotView extends Component<PlotProps> {
   }
 
   get xDomain(): [number, number] {
-    const windowSize = this.props.settings.windowSize;
-    const r = this.props.table.range;
-    const start = Math.max(0, r.end - windowSize);
-    return [start, start + windowSize];
+    const r = this.props.settings.range;
+    return [r.start, r.end];
   }
 
-  plot(parent: HTMLDivElement) {
+  mainPlot(parent: HTMLDivElement) {
     parent.textContent = "";
 
     let width = parent.offsetWidth;
@@ -283,17 +273,17 @@ class PlotView extends Component<PlotProps> {
   }
 
   componentDidMount() {
-    this.plot(this.plotElt.current);
+    this.mainPlot(this.plotElt.current);
   }
 
-  shouldComponentUpdate(next: PlotProps): boolean {
-    return !document.hidden && !this.props.table.range.equals(next.table.range) ||
-      this.props.windowChanges != next.windowChanges ||
-      this.props.settings != next.settings;
-  }
+  // shouldComponentUpdate(next: PlotProps): boolean {
+  //   return !document.hidden && !this.props.table.range.equals(next.table.range) ||
+  //     this.props.windowChanges != next.windowChanges ||
+  //     this.props.settings != next.settings;
+  // }
 
   componentDidUpdate() {
-    this.plot(this.plotElt.current);
+    this.mainPlot(this.plotElt.current);
   }
 
   makeToggleButton = (name: string) => {
@@ -317,7 +307,10 @@ class PlotView extends Component<PlotProps> {
       <div class="plot-main-buttons" role="group">
         {this.props.table.columnNames.map((name) => this.makeToggleButton(name))}
       </div>
-      <div class="plot-main" ref={this.plotElt} />
+      <div class="plot-main">
+        {this.props.status == "reading" ? "" : <Slider bounds={this.props.settings.bounds} thumb={this.props.settings.range} />}
+        <div class="plot-main-graph" ref={this.plotElt} />
+      </div>
       {this.bottomColumns().map((col) =>
         <BottomPlotView
           column={col}
@@ -335,11 +328,19 @@ class PlotView extends Component<PlotProps> {
   }
 }
 
+const Slider = (props: {bounds: Range, thumb: Range}) => {
+  const leftMarginPercent = 100 * (props.thumb.start - props.bounds.start) / props.bounds.length;
+  const thumbPercent = 100 * props.thumb.length / props.bounds.length;
+  return <div class="slider">
+    <div class="thumb" style={`margin-left: ${leftMarginPercent}%; width: ${thumbPercent}%`}> </div>
+  </div>
+}
+
 class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, number], color: string }> {
   plotElt = createRef<HTMLDivElement>();
   lastIndex = null;
 
-  plot(parent: HTMLDivElement) {
+  bottomPlot(parent: HTMLDivElement) {
     parent.textContent = "";
 
     let width = parent.offsetWidth;
@@ -373,7 +374,7 @@ class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, 
   }
 
   componentDidUpdate() {
-    this.plot(this.plotElt.current);
+    this.bottomPlot(this.plotElt.current);
   }
 
   render() {

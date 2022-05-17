@@ -34,7 +34,29 @@ const main = () => {
 }
 
 const startApp = (state: AppState, device: Device, appElt: Element): void => {
-  state.addEventListener("save", () => render(AppView(state.props), appElt));
+  let savesRequested = 0;
+  let savesRendered = 0;
+  let rendering = false;
+
+  const onRender = () => {
+    if (savesRequested == savesRendered) {
+      rendering = false;
+      return; // caught up
+    }
+    render(AppView(state.props), appElt);
+    savesRendered = savesRequested;
+    requestAnimationFrame(onRender); // will run in next frame
+  }
+
+  const onSave = () => {
+    savesRequested++;
+    if (!rendering) {
+      rendering = true;
+      requestAnimationFrame(onRender);
+    }
+  };
+
+  state.addEventListener("save", onSave);
 
   const connectUnlessCancelled = async () => {
     // Tell other windows to close the serial port.
