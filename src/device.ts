@@ -73,7 +73,7 @@ export class SerialPortDevice implements Device {
   }
 }
 
-const generatorPeriod = 10;
+const generatorPeriod = 5;
 
 export class FunctionGenerator implements Device {
   #timeout: number;

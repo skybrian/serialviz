@@ -295,3 +295,16 @@ export class TableBuffer {
     }
   }
 }
+
+export const sliceToCSV = (slice: TableSlice): string => {
+  const colNames = slice.columnNames;
+  let out = colNames.join(",") + "\n";
+  for (let row = 0; row < slice.rows.length; row++) {
+    for (let col = 0; col < colNames.length; col++) {
+      if (col > 0) out += ",";
+      out += slice.columns[col].values[row];
+    }
+    out += "\n";
+  }
+  return out;
+}

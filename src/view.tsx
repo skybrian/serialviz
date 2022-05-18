@@ -4,7 +4,8 @@ import { h, Component, ComponentChildren, toChildArray, VNode } from 'preact';
 import { AppProps, SelectedTab } from './state';
 import { PlotView } from './plot';
 import { TermView } from './term';
-import { TableSlice, Range, range } from './csv';
+import { TableSlice, Range, range, sliceToCSV } from './csv';
+import { blob } from 'node:stream/consumers';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -139,18 +140,41 @@ const TabView = (props: TabProps) => {
 }
 
 class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
+  downloadURL = null as string;
+  size = null as string;
+
+  componentWillMount() {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(sliceToCSV(this.props.slice));
+    const blob = new Blob([bytes]);
+    this.downloadURL = URL.createObjectURL(blob);
+    this.size = `${Math.round(bytes.length / 1000)}K`;
+  }
+
+  shouldComponentUpdate() {
+    this.componentDidUnmount();
+    this.componentWillMount();
+    return true;
+  }
+
+  componentDidUnmount() {
+    URL.revokeObjectURL(this.downloadURL);
+    this.downloadURL = null;
+    this.size = null;
+  }
+
   render() {
     const included = new Set(this.props.columns);
     const excluded = this.props.slice.columnNames.filter((c) => !included.has(c));
     const sliceRows = this.props.slice.rows;
     const allRows = this.props.slice.allRows;
     return <div>
-      <p>Download 
+      <p>Save 
         {sliceRows.length < allRows.length ? ` ${sliceRows.length} of` : ""
-          } {allRows.length} rows as a CSV file.</p>
+          } {allRows.length} rows as a {this.size} CSV file.</p>
       <p>Columns included: {this.props.columns.join(", ")}</p>
       {excluded.length == 0 ? "" : <p>Columns excluded: {excluded.join(", ")}</p>}
-      <button class="pure-button" disabled={true}>Download</button>
+      <a class="pure-button" href={this.downloadURL} download="data.csv">Save CSV</a>
     </div>
   }
 }
