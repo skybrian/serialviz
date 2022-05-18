@@ -1,9 +1,10 @@
 'use strict';
 
-import { h, ComponentChildren, toChildArray, VNode } from 'preact';
+import { h, Component, ComponentChildren, toChildArray, VNode } from 'preact';
 import { AppProps, SelectedTab } from './state';
 import { PlotView } from './plot';
 import { TermView } from './term';
+import { TableSlice, Range, range } from './csv';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -50,6 +51,8 @@ export const AppView = (props: AppProps) => {
   const log = props.state.log;
   const table = props.table;
   const tabs = Object.values(SelectedTab);
+  const disabledTabs: SelectedTab[] =
+    props.state.status != "closed" ? [SelectedTab.save] : [];
 
   let zoom = <div></div>;
   if (props.tab == SelectedTab.plot) {
@@ -64,26 +67,35 @@ export const AppView = (props: AppProps) => {
     </div>
   }
 
+  const enabledColumns = props.plotSettings.columnStates.enabledColumns;
+
   return <div class="app-view">
     <div>
       {stopButton()}
     </div>
-    <TabView labels={tabs} rightOfTabs={zoom} selected={props.tab} chooseTab={props.chooseTab}>
+    <TabView
+      labels={tabs}
+      disabledLabels={disabledTabs}
+      rightOfTabs={zoom}
+      selected={props.tab}
+      chooseTab={props.chooseTab}>
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
-      {table == null ? "" : <PlotView
+      {table == null ? "<div></div>" : <PlotView
         status={props.state.status}
         table={table}
         settings={props.plotSettings}
         windowChanges={props.windowChanges}
         toggleColumn={props.toggleColumn}
         pan={props.pan} />}
+      <SaveView slice={table} columns={enabledColumns}/>
     </TabView>
   </div>;
 }
 
 interface TabProps {
   labels: string[];
+  disabledLabels?: string[];
   rightOfTabs?: VNode;
   selected: string;
   chooseTab: (label: string) => void;
@@ -92,15 +104,28 @@ interface TabProps {
 
 const TabView = (props: TabProps) => {
   const selected = props.selected;
+  const disabled = new Set(props.disabledLabels ?? []);
   const labels = props.labels;
   const children = toChildArray(props.children);
+
+  const renderTab = (label: string) => {
+    if (disabled.has(label)) {
+      return <li class="pure-menu-item pure-menu-disabled"><a class="pure-menu-link">{label}</a></li>
+    }
+
+    let classes = "pure-menu-item";
+    if (label == selected) classes += " pure-menu-selected";
+
+    return <li class={classes}>
+      <a href="#" class="pure-menu-link" onClick={() => props.chooseTab(label)}
+      >{label}</a>
+    </li>
+  }
+
   return <div class="tab-view">
     <div class="tab-row">
       <div class="pure-menu pure-menu-horizontal"><ul class="pure-menu-list">
-        {labels.map((label) =>
-          <li class={label == selected ? "pure-menu-item pure-menu-selected" : "pure-menu-item"}>
-            <a href="#" class="pure-menu-link" onClick={() => props.chooseTab(label)}>{label}</a>
-          </li>)}
+        {labels.map(renderTab)}
       </ul>
       </div>
       {(props.rightOfTabs ? <div class="right-of-tabs">{props.rightOfTabs}</div> : "")}
@@ -111,4 +136,21 @@ const TabView = (props: TabProps) => {
       }
     })}
   </div>
+}
+
+class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
+  render() {
+    const included = new Set(this.props.columns);
+    const excluded = this.props.slice.columnNames.filter((c) => !included.has(c));
+    const sliceRows = this.props.slice.rows;
+    const allRows = this.props.slice.allRows;
+    return <div>
+      <p>Download 
+        {sliceRows.length < allRows.length ? ` ${sliceRows.length} of` : ""
+          } {allRows.length} rows as a CSV file.</p>
+      <p>Columns included: {this.props.columns.join(", ")}</p>
+      {excluded.length == 0 ? "" : <p>Columns excluded: {excluded.join(", ")}</p>}
+      <button class="pure-button" disabled={true}>Download</button>
+    </div>
+  }
 }

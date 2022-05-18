@@ -288,8 +288,8 @@ testProp('TableBuffer should preserve the last data rows added to the current ta
     t.deepEqual(table.columnNames, [columnName], `should have column named "${columnName}"`);
 
     const rowStart = rowsAdded > limit ? rowsAdded - limit : 0;
-    t.is(table.range.start, rowStart);
-    t.is(table.range.end, rowsAdded);
+    t.is(table.rows.start, rowStart);
+    t.is(table.rows.end, rowsAdded);
     t.is(table.columns.length, 1);
 
     const col = table.columns[0];

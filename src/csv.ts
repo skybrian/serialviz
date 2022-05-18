@@ -184,7 +184,8 @@ export class Range {
 export interface TableSlice {
   key: number;
   columnNames: string[];
-  range: Range;
+  rows: Range;
+  allRows: Range;
   columns: ColumnSlice[];
 }
 
@@ -240,7 +241,8 @@ export class TableBuffer {
     return {
       key: this.#tablesSeen,
       columnNames: this.#columnNames,
-      range: rowRange,
+      rows: rowRange,
+      allRows: range(this.#rowStart, this.#rowEnd),
       columns: columns,
     };
   }

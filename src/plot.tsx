@@ -75,7 +75,7 @@ export class PlotView extends Component<PlotProps> {
         const rowsScrolled = this.xDomain[0];
 
         let marks = [];
-        if (table.range.length >= 2) { // avoid high cardinality warning in Plot.
+        if (table.rows.length >= 2) { // avoid high cardinality warning in Plot.
             for (let col of table.columns) {
                 if (this.props.settings.columnStates.get(col.name) == "top") {
                     const start = col.range.start;

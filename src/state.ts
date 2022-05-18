@@ -53,6 +53,10 @@ export class ColumnStates {
     return [...this.states.keys()];
   }
 
+  get enabledColumns(): string[] {
+    return this.columns.filter(c => this.get(c) != "hidden" );
+  }
+
   withColumns(tableColumns: string[]): ColumnStates {
     const newColumns = tableColumns.filter((c) => !this.has(c));
     const topColumns = this.columns.filter((c) => this.get(c) == "top");
@@ -101,7 +105,8 @@ export class ColumnStates {
 export enum SelectedTab {
   head = "Head",
   tail = "Tail",
-  plot = "Plot"
+  plot = "Plot",
+  save = "Save"
 }
 
 export interface AppProps {
@@ -285,6 +290,9 @@ export class AppState extends EventTarget implements DeviceOutput {
       this.#log = { key: this.#log.key + 1, head: [], tail: [] };
       this.#linesAdded = 0;
       this.#rows.clear();
+      if (this.#tab == SelectedTab.save) {
+        this.#tab = SelectedTab.plot;
+      }
       this.#plotSettings = {...this.#plotSettings,
         range: range(0, zoomRangeStart),
         bounds: range(0, zoomRangeStart),
