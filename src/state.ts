@@ -36,6 +36,10 @@ export interface PlotSettings {
   zoomRange: Range;
 }
 
+export interface SaveSettings {
+  filePrefix: string;
+}
+
 export class ColumnStates {
   private states: Map<string, ColumnState>;
 
@@ -114,6 +118,7 @@ export interface AppProps {
   table: TableSlice;
   tab: SelectedTab;
   plotSettings: PlotSettings;
+  saveSettings: SaveSettings;
   windowChanges: number;
 
   stop: () => void;
@@ -122,6 +127,7 @@ export interface AppProps {
   toggleColumn: (name: string) => void;
   zoom: (windowSize: number) => void;
   pan: (deltaRows: number) => void;
+  setSaveFilePrefix: (val: string) => void;
 }
 
 export interface DeviceOutput {
@@ -139,12 +145,16 @@ export class AppState extends EventTarget implements DeviceOutput {
 
   #rows = new TableBuffer(tableBufferLimit);
 
-  #tab = SelectedTab.tail;
+  #tab = SelectedTab.head;
   #plotSettings = {
     columnStates: new ColumnStates(),
     range: range(0, zoomRangeStart),
     bounds: range(0, zoomRangeStart),
     zoomRange: range(zoomRangeStart, zoomRangeStart) };
+
+  #saveSettings = {
+    filePrefix: "data"
+  };
 
   #windowChanges = 0;
 
@@ -163,6 +173,7 @@ export class AppState extends EventTarget implements DeviceOutput {
       table: this.#rows.slice(rowRange),
       tab: this.#tab,
       plotSettings: this.#plotSettings,
+      saveSettings: this.#saveSettings,
       windowChanges: this.#windowChanges,
 
       stop: this.requestClose,
@@ -171,6 +182,7 @@ export class AppState extends EventTarget implements DeviceOutput {
       toggleColumn: this.toggleColumn,
       zoom: this.zoom,
       pan: this.pan,
+      setSaveFilePrefix: this.setSaveFilePrefix,
     }
   }
 
@@ -351,6 +363,11 @@ export class AppState extends EventTarget implements DeviceOutput {
       this.#plotSettings = { ...this.#plotSettings, range: newRange};
       this.#save();
     }
+  }
+
+  setSaveFilePrefix = (val: string) => {
+    this.#saveSettings = {...this.#saveSettings, filePrefix: val};
+    this.#save();
   }
 
   windowChanged(): void {

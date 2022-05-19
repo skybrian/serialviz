@@ -1,11 +1,10 @@
 'use strict';
 
-import { h, Component, ComponentChildren, toChildArray, VNode } from 'preact';
-import { AppProps, SelectedTab } from './state';
+import { h, Component, ComponentChildren, toChildArray, VNode, Fragment } from 'preact';
+import { AppProps, SaveSettings, SelectedTab } from './state';
 import { PlotView } from './plot';
 import { TermView } from './term';
-import { TableSlice, Range, range, sliceToCSV } from './csv';
-import { blob } from 'node:stream/consumers';
+import { TableSlice, sliceToCSV } from './csv';
 
 interface ConnectProps {
   haveSerial: boolean;
@@ -89,7 +88,7 @@ export const AppView = (props: AppProps) => {
         windowChanges={props.windowChanges}
         toggleColumn={props.toggleColumn}
         pan={props.pan} />}
-      <SaveView slice={table} columns={enabledColumns}/>
+      <SaveView slice={table} columns={enabledColumns} settings={props.saveSettings} setFilePrefix={props.setSaveFilePrefix} />
     </TabView>
   </div>;
 }
@@ -139,13 +138,20 @@ const TabView = (props: TabProps) => {
   </div>
 }
 
-class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
+interface SaveProps {
+  slice: TableSlice;
+  columns: string[];
+  settings: SaveSettings;
+  setFilePrefix: (name: string) => void;
+}
+
+class SaveView extends Component<SaveProps> {
   downloadURL = null as string;
   size = null as string;
 
   componentWillMount() {
     const encoder = new TextEncoder();
-    const bytes = encoder.encode(sliceToCSV(this.props.slice, {columns: this.props.columns}));
+    const bytes = encoder.encode(sliceToCSV(this.props.slice, { columns: this.props.columns }));
     const blob = new Blob([bytes]);
     this.downloadURL = URL.createObjectURL(blob);
     this.size = `${Math.round(bytes.length / 1000)}K`;
@@ -163,18 +169,72 @@ class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
     this.size = null;
   }
 
-  render() {
+  get suffix() {
+    return `_${this.rowCount}rows.csv`;
+  }
+
+  get filename() {
+    return this.props.settings.filePrefix + this.suffix;
+  }
+
+  get colCount() {
+    return this.props.columns.length;
+  }
+
+  get rowCount() {
+    return this.props.slice.rows.length
+  }
+
+  onFilePrefixChange = (e) => {
+    this.props.setFilePrefix(e.target.value);
+  }
+
+  renderFilename() {
+    const props = this.props;
+
+    return <div class="pure-control-group">
+      <label for="file-prefix-input">Filename</label>
+      <input type="text" id="file-prefix-input"
+        value={this.props.settings.filePrefix}
+        onInput={this.onFilePrefixChange} />{this.suffix}
+    </div>
+  }
+
+  renderFormItem(label: string, text: string) {
+    return <div class="pure-control-group">
+      <label>{label}</label>
+      <span class="form-item-text">{text}</span>
+    </div>;
+  }
+
+  renderIncludedColumns() {
     const included = new Set(this.props.columns);
     const excluded = this.props.slice.columnNames.filter((c) => !included.has(c));
-    const sliceRows = this.props.slice.rows;
-    const allRows = this.props.slice.allRows;
-    return <div>
-      <p>Save
-        {sliceRows.length < allRows.length ? ` ${sliceRows.length} of` : ""
-          } {allRows.length} rows as a {this.size} CSV file.</p>
-      <p>Columns included: {this.props.columns.join(", ")}</p>
-      {excluded.length == 0 ? "" : <p>Columns excluded: {excluded.join(", ")}</p>}
-      <a class="pure-button" href={this.downloadURL} download="data.csv">Save CSV</a>
-    </div>
+    return <>
+      {this.renderFormItem("Included Columns", this.props.columns.join(", "))}
+      {excluded.length == 0 ? "" : this.renderFormItem("Excluded Columns", excluded.join(", "))}
+    </>
+  }
+
+  renderIncludedRows() {
+    const allRows = this.props.slice.allRows.length;
+
+    const text = (this.rowCount == allRows) ?
+      `all ${this.rowCount} rows in buffer.` :
+      `${this.rowCount} of ${allRows} rows in buffer.`;
+    return this.renderFormItem("Included Rows", text);
+  }
+
+  render() {
+    return <form class="pure-form pure-form-aligned">
+      <h2>Save currently plotted data to a CSV file</h2>
+      <fieldset>
+        {this.renderFilename()}
+        {this.renderFormItem("Size", this.size)}
+        {this.renderIncludedColumns()}
+        {this.renderIncludedRows()}
+        <a class="pure-button" href={this.downloadURL} download={this.filename}>Save File</a>
+      </fieldset>
+    </form>
   }
 }

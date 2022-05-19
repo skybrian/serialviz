@@ -167,3 +167,11 @@ body {
     flex-grow: 1;
     text-align: right;
 }
+
+#file-prefix-input {
+    text-align: right;
+}
+
+.form-item-text {
+    vertical-align: middle;
+}

@@ -43,7 +43,12 @@ const startApp = (state: AppState, device: Device, appElt: Element): void => {
       rendering = false;
       return; // caught up
     }
-    render(AppView(state.props), appElt);
+    try {
+      render(AppView(state.props), appElt);
+    } catch (e) {
+      rendering = false;
+      throw e;
+    }
     savesRendered = savesRequested;
     requestAnimationFrame(onRender); // will run in next frame
   }
