@@ -296,13 +296,23 @@ export class TableBuffer {
   }
 }
 
-export const sliceToCSV = (slice: TableSlice): string => {
-  const colNames = slice.columnNames;
+export const sliceToCSV = (slice: TableSlice, options?: {columns?: string[]}): string => {
+  const colNames = options?.columns ?? slice.columnNames;
+
+  let indexes = Array(colNames.length);
+  for (let i = 0; i < indexes.length; i++) {
+    const index = slice.columnNames.indexOf(colNames[i]);
+    if (index == -1) {
+      throw `invalid column name: ${colNames[i]}`;
+    }
+    indexes[i] = index;
+  }
+
   let out = colNames.join(",") + "\n";
   for (let row = 0; row < slice.rows.length; row++) {
-    for (let col = 0; col < colNames.length; col++) {
-      if (col > 0) out += ",";
-      out += slice.columns[col].values[row];
+    for (let i = 0; i < indexes.length; i++) {
+      if (i > 0) out += ",";
+      out += slice.columns[indexes[i]].values[row];
     }
     out += "\n";
   }

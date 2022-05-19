@@ -145,7 +145,7 @@ class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
 
   componentWillMount() {
     const encoder = new TextEncoder();
-    const bytes = encoder.encode(sliceToCSV(this.props.slice));
+    const bytes = encoder.encode(sliceToCSV(this.props.slice, {columns: this.props.columns}));
     const blob = new Blob([bytes]);
     this.downloadURL = URL.createObjectURL(blob);
     this.size = `${Math.round(bytes.length / 1000)}K`;
@@ -169,7 +169,7 @@ class SaveView extends Component<{slice: TableSlice, columns: string[] }> {
     const sliceRows = this.props.slice.rows;
     const allRows = this.props.slice.allRows;
     return <div>
-      <p>Save 
+      <p>Save
         {sliceRows.length < allRows.length ? ` ${sliceRows.length} of` : ""
           } {allRows.length} rows as a {this.size} CSV file.</p>
       <p>Columns included: {this.props.columns.join(", ")}</p>
