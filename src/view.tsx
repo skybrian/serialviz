@@ -1,9 +1,10 @@
 'use strict';
 
-import { h, Component, ComponentChildren, toChildArray, VNode, Fragment } from 'preact';
+import { h, Component, Fragment } from 'preact';
 import { AppProps, SaveSettings, SelectedTab } from './state';
 import { PlotView } from './plot';
 import { TermView } from './term';
+import { TabView } from './tabs';
 import { TableSlice, sliceToCSV } from './csv';
 
 interface ConnectProps {
@@ -91,51 +92,6 @@ export const AppView = (props: AppProps) => {
       <SaveView slice={table} columns={enabledColumns} settings={props.saveSettings} setFilePrefix={props.setSaveFilePrefix} />
     </TabView>
   </div>;
-}
-
-interface TabProps {
-  labels: string[];
-  disabledLabels?: string[];
-  rightOfTabs?: VNode;
-  selected: string;
-  chooseTab: (label: string) => void;
-  children: ComponentChildren;
-}
-
-const TabView = (props: TabProps) => {
-  const selected = props.selected;
-  const disabled = new Set(props.disabledLabels ?? []);
-  const labels = props.labels;
-  const children = toChildArray(props.children);
-
-  const renderTab = (label: string) => {
-    if (disabled.has(label)) {
-      return <li class="pure-menu-item pure-menu-disabled"><a class="pure-menu-link">{label}</a></li>
-    }
-
-    let classes = "pure-menu-item";
-    if (label == selected) classes += " pure-menu-selected";
-
-    return <li class={classes}>
-      <a href="#" class="pure-menu-link" onClick={() => props.chooseTab(label)}
-      >{label}</a>
-    </li>
-  }
-
-  return <div class="tab-view">
-    <div class="tab-row">
-      <div class="pure-menu pure-menu-horizontal"><ul class="pure-menu-list">
-        {labels.map(renderTab)}
-      </ul>
-      </div>
-      {(props.rightOfTabs ? <div class="right-of-tabs">{props.rightOfTabs}</div> : "")}
-    </div>
-    {children.map((child, i) => {
-      if (labels[i] == selected) {
-        return <div class="tab-view-selected">{child}</div>
-      }
-    })}
-  </div>
 }
 
 interface SaveProps {
