@@ -82,7 +82,7 @@ export const AppView = (props: AppProps) => {
       chooseTab={props.chooseTab}>
       <TermView logKey={log.key} lines={log.head} truncateRows windowChanges={props.windowChanges} />
       <TermView logKey={log.key} lines={log.tail} windowChanges={props.windowChanges} />
-      {table == null ? "<div></div>" : <PlotView
+      {table == null ? <div>Waiting for data...</div> : <PlotView
         status={props.state.status}
         table={table}
         settings={props.plotSettings}
