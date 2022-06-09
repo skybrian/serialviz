@@ -180,13 +180,18 @@ testProp('parseFields should parse quoted strings as one-row records', [fc.strin
   t.deepEqual(actual, [input]);
 });
 
-const arbitraryDoubles = fc.double().map((n) => n + "");
+const specialDoubles = new Set(["inf", "nan"]);
+
+const arbitraryDoubles = fc.oneof(
+  fc.double().map((n) => n + ""),
+  fc.constantFrom(...specialDoubles.keys()));
 
 testProp('parseFields should parse doubles as one-row records', [arbitraryDoubles], (t, input) => {
   t.deepEqual(parseFields(input), [input]);
 });
 
-const arbitraryNonNumber = fc.string().filter((s) => s.trim() != "NaN" && isNaN(+s) && s.match(/[,"]/) == null);
+const arbitraryNonNumber = fc.string().filter(
+  (s) => !specialDoubles.has(s.trim().toLowerCase()) && isNaN(+s) && s.match(/[,"]/) == null);
 
 const arbitraryNonCSV = fc.string().filter((s) => s.match(/^[^ 0-9,\+\-\."][^,]*$/) != null);
 

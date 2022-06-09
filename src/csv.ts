@@ -46,8 +46,10 @@ const NO_MATCH = Symbol("NO_MATCH");
 
 export function parseNumber(input: string): number | null {
   input = input.trim();
+  const lower = input.toLowerCase();
   if (input.length == 0) return null;
-  else if (input == "NaN") return NaN;
+  else if (lower == "nan") return NaN;
+  else if (lower == "inf") return Infinity;
   else if (input == "-0") return 0;
   const parsed = +input;
   if (isNaN(parsed)) {
