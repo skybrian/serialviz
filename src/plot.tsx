@@ -88,13 +88,15 @@ export class PlotView extends Component<PlotProps> {
             width: width,
             height: height,
             marks: marks,
+            marginTop: 60,
+            marginLeft: 60,
             x: {
                 domain: this.xDomain,
                 axis: "top"
             },
             y: {
                 nice: true,
-                zero: true
+                zero: false
             }
         }));
     }
@@ -219,6 +221,7 @@ class BottomPlotView extends Component<{ column: ColumnSlice, xDomain: [number, 
         parent.appendChild(Plot.plot({
             width: width,
             height: height,
+            marginLeft: 60,
             marks: marks,
             x: {
                 domain: this.props.xDomain,
