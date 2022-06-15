@@ -242,6 +242,7 @@ export class AppState extends EventTarget implements DeviceOutput {
     this.#rows.push(row);
 
     if (prevKey != this.#rows.key) {
+      this.resetZoomAndPan();
       const next = this.#plotSettings.columnStates.withColumns(this.#rows.columnNames);
       this.#plotSettings = { ...this.#plotSettings, columnStates: next};
     }
@@ -290,6 +291,14 @@ export class AppState extends EventTarget implements DeviceOutput {
 
   requestRestart = (): boolean => this.requestChange("connecting");
 
+  resetZoomAndPan() {
+    this.#plotSettings = {...this.#plotSettings,
+      range: range(0, zoomRangeStart),
+      bounds: range(0, zoomRangeStart),
+      zoomRange: range(zoomRangeStart, zoomRangeStart)
+    };
+  }
+
   requestChange(wanted: PortStatus, options = {} as { message?: any, optional?: boolean }): boolean {
     if (!this.canChangeTo(wanted)) {
       if (!options.optional) {
@@ -305,11 +314,7 @@ export class AppState extends EventTarget implements DeviceOutput {
       if (this.#tab == SelectedTab.save) {
         this.#tab = SelectedTab.plot;
       }
-      this.#plotSettings = {...this.#plotSettings,
-        range: range(0, zoomRangeStart),
-        bounds: range(0, zoomRangeStart),
-        zoomRange: range(zoomRangeStart, zoomRangeStart)
-      };
+      this.resetZoomAndPan();
     }
 
     if (options.message) {
