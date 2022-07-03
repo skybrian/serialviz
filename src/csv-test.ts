@@ -159,6 +159,10 @@ testProp('findLines should generate complete lines',
 const arbitraryAsciiRecord = fc.array(fc.string(), { minLength: 2 });
 
 testProp('parseFields should allow fields with printable ascii characters', [arbitraryAsciiRecord], async (t, original) => {
+  if (original[0].startsWith("#")) {
+    t.pass(); // except for comments
+    return;
+  }
   const line = csvFormatRow(original);
   const actual = parseFields(line);
   t.deepEqual(actual, original);
@@ -199,6 +203,11 @@ testProp('parseFields should reject non-CSV lines', [arbitraryNonCSV], (t, input
   t.is(parseFields(input), null);
 });
 
+testProp('parseFields should reject comments', [biasedStrings], (t, input) => {
+  t.is(parseFields('#' + input), null);
+});
+
+
 testProp('parseNumber should accept numbers as themselves', [fc.double({ next: true })], (t, input) => {
   input = (input == 0) ? 0 : input; // filter -0
   t.is(parseNumber(`${input}`), input);
@@ -232,9 +241,10 @@ testProp('parseRow should parse rows with all numbers and a trailing comma as da
 });
 
 testProp('parseRow should parse rows with a non-number as a header, or reject', [fc.array(fc.double()), arbitraryNonNumber, fc.array(fc.double())], (t, prefix, field, suffix) => {
+  const isComment = (prefix.length == 0 && field.startsWith("#"));
   const input = ([] as (string | number)[]).concat(prefix, [field], suffix);
   const row = parseRow(input.join(","));
-  if (input.length == 1) {
+  if (input.length == 1 || isComment) {
     t.is(row, null);
   } else {
     t.is(row.kind, "header");

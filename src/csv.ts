@@ -61,6 +61,7 @@ export function parseNumber(input: string): number | null {
 /** Given something that looks like a CSV row (without the line ending), returns its fields. */
 export function parseFields(input: string): string[] | null {
   if (input.length == 0) return null; // skip blank lines
+  if (input[0] == '#') return null; // skip comments
   if (!input.startsWith("\"") && !input.includes(",")) {
     // check for a number
     if (input.match(/[\r\n]/)) return null; // only handle single-line input
