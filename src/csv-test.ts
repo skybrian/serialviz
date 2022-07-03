@@ -225,6 +225,12 @@ testProp('parseRow should parse rows with all numbers as data', [fc.array(fc.dou
   t.deepEqual(row, { kind: "data", values: fixedZeros });
 });
 
+testProp('parseRow should parse rows with all numbers and a trailing comma as data', [fc.array(fc.double({ next: true }), { minLength: 1 })], (t, input) => {
+  const row = parseRow(input.join(",") + ",");
+  const fixedZeros = input.map((n) => n == 0 ? 0 : n);
+  t.deepEqual(row, { kind: "data", values: fixedZeros });
+});
+
 testProp('parseRow should parse rows with a non-number as a header, or reject', [fc.array(fc.double()), arbitraryNonNumber, fc.array(fc.double())], (t, prefix, field, suffix) => {
   const input = ([] as (string | number)[]).concat(prefix, [field], suffix);
   const row = parseRow(input.join(","));

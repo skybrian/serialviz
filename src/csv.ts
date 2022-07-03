@@ -148,6 +148,11 @@ export function parseRow(input: string): Row | null {
   for (let i = 0; i < fields.length; i++) {
     const n = parseNumber(fields[i]);
     if (n == null) {
+      if (i == fields.length - 1 && fields[i].length == 0) {
+        // ignore trailing comma
+        values.length = values.length - 1;
+        return { kind: "data", values: values };
+      }
       return { kind: "header", fields: fields };
     }
     values[i] = n;
